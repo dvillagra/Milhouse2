@@ -1,0 +1,14 @@
+# Some notes on DB model and implementation
+
+## MongoDB Implementation
+ - User creates, uploads and submits project definition CSV
+ - csv2job converts CSV to secondary job objects
+ - csv and secondary jobs are fed into process that generates condition objects
+ - analysis profiles selected populate plots and tables in project
+ - secondary jobs are submitted
+ - milhouse pings secondary analysis servers for status updates on jobs
+ - once analysis completes, milhouse runs split and merge operations on cmpH5s
+ - milhouse runs the analysis procedures and waits for the plots to populate
+ - placeholders are replaced with the actual plots upon web service receipt of plot
+ 
+ 

@@ -27,14 +27,15 @@ class Quote(Document):
 ### Project related ###
 
 # For Secondary Analysis Jobs
-class CellName(EmbeddedDocument):
-    name           = StringField()
+class SMRTCell(EmbeddedDocument):
+    context        = StringField()
     data_path      = StringField()
     primary_folder = StringField()
+    runcode        = StringField()
     
 class SecondaryJob(Document):
     job_id    = IntField(min_value=100000, max_value=999999)
-    cellname  = ListField(EmbeddedDocumentField(CellName))
+    cellname  = ListField(EmbeddedDocumentField(SMRTCell))
     job_type  = StringField(choices = enums.SECONDARY_JOB_TYPE)
     workflow  = StringField(choices = enums.SECONDARY_WORKFLOWS)
     reference = StringField(choices = enums.REFERENCE_SEQUENCES)
