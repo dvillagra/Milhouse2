@@ -8,7 +8,7 @@ from mongoengine import Document, EmbeddedDocument, StringField, EmailField, \
     URLField, IntField, ListField, EmbeddedDocumentField, ReferenceField, \
     FileField, ImageField, BooleanField, DateTimeField
     
-from datetime import datetime    
+from datetime import datetime
 import pycore.MEnums as enums
 
 # Miscellaneous
@@ -102,7 +102,7 @@ class Project(Document):
     tags             = ListField(StringField(max_length=50))
     comments         = ListField(EmbeddedDocumentField(Comment))
     status           = StringField(choices = enums.PROJECT_STATUS)
+    conditions       = ListField(ReferenceField(Condition))
     analysis_profile = ListField(ReferenceField(AnalysisProfile))
     plots            = ListField(EmbeddedDocumentField(AnalysisPlot))
     tables           = ListField(EmbeddedDocumentField(AnalysisTable))
-

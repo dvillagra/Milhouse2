@@ -1,22 +1,44 @@
 # Django settings for Milhouse2 project.
+import os
+import sys
+
+from pycore import MUtils as MU
+
+DIRNAME = os.path.abspath(os.path.dirname(__file__))
+
+####################
+# Milhouse globals #
+####################
+MILHOUSE_HOME = os.environ.get('MILHOUSE_HOME')
+if not MILHOUSE_HOME:
+    print 'ERROR: Environment variable MILHOUSE_HOME needs to be set! Exiting...' 
+    sys.exit(1)
+if not os.path.isfile('%s/config/milhouse.conf' % MILHOUSE_HOME):
+    print 'ERROR: No milhouse.conf file found under %s/config/' % MILHOUSE_HOME 
+    sys.exit(1)
+    
+MILHOUSE_CONF = MU.parseMilhouseConf('%s/config/milhouse.conf' % MILHOUSE_HOME)
 
 DEBUG = True
 TEMPLATE_DEBUG = DEBUG
 
 ADMINS = (
-    # ('Your Name', 'your_email@example.com'),
+    ('David Villagra', 'dvillagra@pacificbiosciences.com'),
+    ('James Bullard', 'jbullard@pacificbiosciences.com'),
+    ('Mengjuei Hsieh', 'mhsieh@pacificbiosciences.com'),
+    ('Mihir Sewak', 'msewak@pacificbiosciences.com')
 )
 
 MANAGERS = ADMINS
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3', # Add 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
-        'NAME': 'C:\\Users\\dvillagra\\workspace\\Milhouse2\\sqlite.db',                      # Or path to database file if using sqlite3.
-        'USER': '',                      # Not used with sqlite3.
-        'PASSWORD': '',                  # Not used with sqlite3.
-        'HOST': '',                      # Set to empty string for localhost. Not used with sqlite3.
-        'PORT': '',                      # Set to empty string for default. Not used with sqlite3.
+        'ENGINE': 'django.db.backends.mysql',    # Add 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
+        'NAME': 'milhouse',                      # Or path to database file if using sqlite3.
+        'USER': 'milhouse',                      # Not used with sqlite3.
+        'PASSWORD': 'wedgie123',                 # Not used with sqlite3.
+        'HOST': 'localhost',                     # Set to empty string for localhost. Not used with sqlite3.
+        'PORT': '3306',                          # Set to empty string for default. Not used with sqlite3.
     }
 }
 
@@ -27,7 +49,7 @@ DATABASES = {
 # timezone as the operating system.
 # If running in a Windows environment this must be set to the same as your
 # system time zone.
-TIME_ZONE = 'America/Chicago'
+TIME_ZONE = 'America/Los_Angeles'
 
 # Language code for this installation. All choices can be found here:
 # http://www.i18nguy.com/unicode/language-identifiers.html
@@ -56,7 +78,7 @@ MEDIA_URL = ''
 # Don't put anything in this directory yourself; store your static files
 # in apps' "static/" subdirectories and in STATICFILES_DIRS.
 # Example: "/home/media/media.lawrence.com/static/"
-STATIC_ROOT = ''
+STATIC_ROOT = MILHOUSE_CONF.get('ML_STATICDIR')
 
 # URL prefix for static files.
 # Example: "http://media.lawrence.com/static/"
@@ -72,7 +94,12 @@ STATICFILES_DIRS = (
     # Put strings here, like "/home/html/static" or "C:/www/django/static".
     # Always use forward slashes, even on Windows.
     # Don't forget to use absolute paths, not relative paths.
+    #MILHOUSE_CONF.get('ML_STATICDIR'),
 )
+
+# Where will Milhouse project data reside?
+# Example: /home/milhouse/projects/
+DATA_ROOT = MILHOUSE_CONF.get('ML_DATADIR')
 
 # List of finder classes that know how to find static files in
 # various locations.
@@ -92,6 +119,18 @@ TEMPLATE_LOADERS = (
 #     'django.template.loaders.eggs.Loader',
 )
 
+TEMPLATE_CONTEXT_PROCESSORS = (
+    "django.contrib.auth.context_processors.auth",
+    "django.core.context_processors.debug",
+    "django.core.context_processors.i18n",
+    "django.core.context_processors.media",
+    "django.core.context_processors.static",
+    "django.contrib.messages.context_processors.messages",
+
+    #Added by dvillagra
+    'django.core.context_processors.request',
+)
+
 MIDDLEWARE_CLASSES = (
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -100,12 +139,13 @@ MIDDLEWARE_CLASSES = (
     'django.contrib.messages.middleware.MessageMiddleware',
 )
 
-ROOT_URLCONF = 'Milhouse2.urls'
+ROOT_URLCONF = 'django_code.urls'
 
 TEMPLATE_DIRS = (
     # Put strings here, like "/home/html/django_templates" or "C:/www/django/templates".
     # Always use forward slashes, even on Windows.
     # Don't forget to use absolute paths, not relative paths.
+    os.path.join(DIRNAME, 'templates'),
 )
 
 INSTALLED_APPS = (
@@ -115,6 +155,10 @@ INSTALLED_APPS = (
     'django.contrib.sites',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.admin',
+    'django.contrib.admindocs',
+    'django_code',
+    'pycore',
     # Uncomment the next line to enable the admin:
     # 'django.contrib.admin',
     # Uncomment the next line to enable admin documentation:
@@ -126,20 +170,28 @@ INSTALLED_APPS = (
 # the site admins on every HTTP 500 error.
 # See http://docs.djangoproject.com/en/dev/topics/logging for
 # more details on how to customize your logging configuration.
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'mail_admins': {
-            'level': 'ERROR',
-            'class': 'django.utils.log.AdminEmailHandler'
-        }
-    },
-    'loggers': {
-        'django.request': {
-            'handlers': ['mail_admins'],
-            'level': 'ERROR',
-            'propagate': True,
-        },
-    }
-}
+#LOGGING = {
+#    'version': 1,
+#    'disable_existing_loggers': False,
+#    'handlers': {
+#        'mail_admins': {
+#            'level': 'ERROR',
+#            'class': 'django.utils.log.AdminEmailHandler'
+#        },
+#        'default': {
+#            'level':'DEBUG',
+#            'class':'logging.handlers.RotatingFileHandler',
+#            'filename': os.path.join(MILHOUSE_HOME, 'log', 'msg.log'),
+#            'maxBytes': 1024*1024*5, # 5 MB
+#            'backupCount': 5,
+#            'formatter':'simple',
+#        }
+#    },
+#    'loggers': {
+#        'django.request': {
+#            'handlers': ['mail_admins'],
+#            'level': 'ERROR',
+#            'propagate': True,
+#        },
+#    }
+#}
