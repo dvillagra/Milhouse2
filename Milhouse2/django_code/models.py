@@ -6,7 +6,7 @@ Created on Feb 5, 2013
 
 from django.db import models
 from django.contrib.auth.models import User 
-from django_code.signals import create_user_profile 
+from django_code.signals import create_user_profile
 from django.db.models.signals import post_save
 import jsonfield
 

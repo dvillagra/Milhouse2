@@ -93,7 +93,7 @@ class SecondaryDataHandler(object):
         return self._getElemFrom(self.getReferenceEntries(), 'name', 'none')
         
 
-    ##PROTOCOLS
+    ## PROTOCOLS
     def getProtocols(self, apiCall='protocols', apiParams=None):
         return self._makeAPICall(apiCall, apiParams)
         
@@ -102,6 +102,32 @@ class SecondaryDataHandler(object):
         
     def getProtocolNames(self):
         return self._getElemFrom(self.getProtocolEntries(), 'name', 'none')
+    
+    
+    ## JOBS
+    def getJobs(self, apiCall='jobs', apiParams=None):
+        return self._makeAPICall(apiCall, apiParams)
+    
+    def getJobEntries(self):
+        return self._getElemDict(self.getJobs())
+    
+    def getJobIDs(self):
+        return self._getElemFrom(self.getProtocolEntries(), 'jobId', 'none')
+    
+    
+    ## MAKE DICTIONARY WITH NAMES AND VALUES
+    def makePropertyDict(self, props=('References', 'Protocols', 'Jobs')):
+        propDict = {}
+        if 'References' in props:
+            propDict['References'] = self.getReferenceNames()
+        if 'Protocols' in props:
+            propDict['Protocols'] = self.getProtocolNames()
+        if 'Jobs' in props:
+            propDict['Jobs'] = self.getJobIDs()
+        return propDict
+    
+    
+        
     
     
     
