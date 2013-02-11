@@ -57,7 +57,7 @@ class ExperimentDefinitionValidator(object):
         if isinstance(csv, str):
             if os.path.isfile(csv):
                 try:
-                    return MU.getRecArrayFromCSV(csv)
+                    return MU.getRecArrayFromCSV(csv, caseSensitive=True)
                 except ValueError as err:
                     MU.logMsg(self, 'Incorrectly formatted CSV file:\n %s' % err, 'error')
             else:
@@ -80,10 +80,8 @@ class ExperimentDefinitionValidator(object):
         
         # Check to see that valid headers were supplied
         jobType = None
-        print "NAMES TUPLE", tuple(csv.dtype.names)
-        print "MIN HEADERS", self.getHeaderValues(minimal=True, tolower=True).values()
-        if tuple(csv.dtype.names) in self.getHeaderValues(minimal=True, tolower=True).values():
-            jobType = self.getHeaderValues(True, True, True).get(tuple(csv.dtype.names))
+        if tuple(csv.dtype.names) in minHeaders.values():
+            jobType = self.getHeaderValues(True, True).get(tuple(csv.dtype.names))
         
         if not jobType:
             msg = 'Invalid headers supplied in input csv: %s' % str(csv.dtype.names)
@@ -108,8 +106,8 @@ class ExperimentDefinitionValidator(object):
 
         # Check to ensure SecondaryServerName maps to valid server
         try:
-            secondaryServers = [SecondaryAnalysisServer.objects.get(serverName = x) for x in csv['SecondaryServerName']]
-            secondaryServers = dict((x.name, x) for x in secondaryServers)
+            secondaryServers = [SecondaryAnalysisServer.objects.get(serverName__exact=x) for x in csv['SecondaryServerName']]
+            secondaryServers = dict((x.serverName, x) for x in secondaryServers)
             serverNames = n.unique(secondaryServers.keys())
             dataHandlerDict = dict([(s, SecondaryDataHandler(secondaryServers.get(s))) for s in serverNames])
         except ObjectDoesNotExist:
@@ -123,7 +121,7 @@ class ExperimentDefinitionValidator(object):
         
         # Check if the non-default columns have a p_ prefix
         allColnames = allHeaders.get(jobType)
-        extras = filter(lambda x: x not in allColnames, self._data.dtype.names)
+        extras = filter(lambda x: x not in allColnames, csv.dtype.names)
         if filter(lambda x: x[:2] != 'p_', extras):
             msg = 'Incorrectly formatted CSV file:\n Extra parameters need to be named using a "p_" prefix' 
             return (False, msg)                
@@ -132,6 +130,7 @@ class ExperimentDefinitionValidator(object):
         if jobType == 'newJob':
             
             serverPropDict = dict([(s, dataHandlerDict[s].makePropertyDict(('References', 'Protocols'))) for s in serverNames])
+            print "SERVER PROP DICT", serverPropDict
             
             # Check if protocols and references provided exists in secondary server's protocol list
             for s,p,r in zip(csv['SecondaryServerName'], csv['SecondaryProtocol'], csv['SecondaryReference']):
