@@ -35,7 +35,7 @@ class SMRTCellDataPathValidator(object):
 class ExperimentDefinitionValidator(object):
 
     @staticmethod
-    def getHeaderValues(minimal = False, reverse=False):
+    def getHeaderValues(minimal = False, reverse=False, tolower=False):
         allOpts = {'newJob'       : ('Name', 'SecondaryServerName', 'SMRTCellPath', 'PrimaryFolder', 'SecondaryProtocol', 'SecondaryReference', 'ExtractBy', 'MergeBy'),
                    'exisitingJob' : ('Name', 'SecondaryServerName', 'SecondaryJobID', 'ExtractBy', 'MergeBy')
                    }
@@ -44,6 +44,8 @@ class ExperimentDefinitionValidator(object):
                    'exisitingJob' : ('Name', 'SecondaryServerName', 'SecondaryJobID')
                    }
         opts = minOpts if minimal else allOpts
+        if tolower:
+            opts = dict([(x, tuple([z.lower() for z in y])) for x,y in opts.iteritems()])
         if reverse:
             return dict([(y,x) for x,y in opts.iteritems()])
         return opts
@@ -72,17 +74,19 @@ class ExperimentDefinitionValidator(object):
         allHeaders = self.getHeaderValues()
         minHeaders = self.getHeaderValues(True)
         
-        if not csv:
-            msg = '[%s] is not a valid file name or stream' % self.csv
+        if csv is None:
+            msg = '[%s] is not a valid file name or stream' % str(self.csv)
             return (False, msg)
         
         # Check to see that valid headers were supplied
         jobType = None
-        if tuple(csv.dtype.names) in allHeaders.values():
-            jobType = self.getHeaderValues(True).get(tuple(csv.dtype.names))
+        print "NAMES TUPLE", tuple(csv.dtype.names)
+        print "MIN HEADERS", self.getHeaderValues(minimal=True, tolower=True).values()
+        if tuple(csv.dtype.names) in self.getHeaderValues(minimal=True, tolower=True).values():
+            jobType = self.getHeaderValues(True, True, True).get(tuple(csv.dtype.names))
         
         if not jobType:
-            msg = 'Invalid headers supplied in input csv: %s' % csv.dtype.names
+            msg = 'Invalid headers supplied in input csv: %s' % str(csv.dtype.names)
             return (False, msg)
         
         # Check if csvFN can be parsed
@@ -99,7 +103,7 @@ class ExperimentDefinitionValidator(object):
 
         # Check if the file contains the correct default column names
         if filter(lambda x: x not in csv.dtype.names, minColnames):
-            msg = 'Incorrectly formatted CSV file:\n Missing default column names from %s' % minColnames
+            msg = 'Incorrectly formatted CSV file:\n Missing default column names from %s' % str(minColnames)
             return (False, msg)
 
         # Check to ensure SecondaryServerName maps to valid server

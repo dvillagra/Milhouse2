@@ -11,8 +11,7 @@ class ProjectFactory(object):
     def __init__(self, definition):
         self.validator  = ExperimentDefinitionValidator(definition)
         self.definition = self.validator.getExperimentDefinition() 
-        self.is_valid   = self.validator.validateDefinition()[0]
-        self.valid_msg  = self.is_valid[1]
+        self.is_valid, self.valid_msg = self.validator.validateDefinition()
         print 'I AM: \n%s' % self.definition
         print 'I AM VALID: (%s, %s)' % (self.is_valid, self.valid_msg) 
         
