@@ -106,7 +106,7 @@ class ExperimentDefinitionValidator(object):
         try:
             secondaryServers = [SecondaryAnalysisServer.objects.get(serverName = x) for x in csv['SecondaryServerName']]
             secondaryServers = dict((x.name, x) for x in secondaryServers)
-            serverNames = set(secondaryServers.keys())
+            serverNames = n.unique(secondaryServers.keys())
             dataHandlerDict = dict([(s, SecondaryDataHandler(secondaryServers.get(s))) for s in serverNames])
         except ObjectDoesNotExist:
             msg = 'Invalid SecondaryServerName. Valid values are: %s' % ([x.name for x in SecondaryAnalysisServer.objects.all()])
@@ -182,12 +182,13 @@ class ExperimentDefinitionValidator(object):
         # HERE'S THE ADVANCED STUFF
  
         # Check for uniqueness of column values within conditions
-        for cond in n.unique(self._data['Name']):
-            sl_data = self._data[self._data['Name'] == cond]
-            if filter(lambda x: len(n.unique(sl_data[x])) != 1, [k for k in sl_data.dtype.names if k != 'RunCodes']):
+        for cond in n.unique(csv['Name']):
+            condRows = csv[csv['Name'] == cond]
+            notUnique = ['SecondaryJobID', 'SecondaryServerName', 'SMRTCellPath', 'PrimaryFolder']
+            if filter(lambda x: len(n.unique(condRows[x])) != 1, [k for k in condRows.dtype.names if k not in notUnique]):
                 msg = 'For condition name=%s some of the attributes are NOT unique' % cond
                 return (False, msg)                                
 
-    return (True, 'CSV file passed validation')
+        return (True, 'CSV file passed validation')
         
         

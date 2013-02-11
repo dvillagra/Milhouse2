@@ -10,7 +10,7 @@ from django_code.signals import create_user_profile
 from django.db.models.signals import post_save
 import jsonfield
 
-import pycore.MEnums as enums
+import pycore.MEnums as enums 
 
 class BaseModel(models.Model):
     created_date  = models.DateTimeField(auto_now_add=True)
