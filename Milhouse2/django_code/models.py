@@ -19,8 +19,8 @@ class BaseModel(models.Model):
     class Meta:
         abstract = True
         
-    def __unicode__(self): 
-        return '%s: %s' % (self.id, self.name)
+#    def __unicode__(self): 
+#        return '%s: %s' % (self.id, self.name)
     
 class UserProfile(BaseModel):
     # This field is required

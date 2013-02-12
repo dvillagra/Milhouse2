@@ -26,7 +26,7 @@ class SecondaryServerConnector(object):
         self.server = server
         
     def _getConnection(self):
-        return httplib.HTTPConnection(self.server.serverHost, self.server.serverPort, timeout=15)
+        return httplib.HTTPConnection(self.server.serverHost, int(self.server.serverPort), timeout=15)
     
     def _makeResponse(self, respDict, asDict=True):
         return respDict if asDict else json.dumps(respDict)

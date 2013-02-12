@@ -17,7 +17,7 @@ from pycore.TestUtils import printOut as PO
 
 def makeProject(definition):
     proj = ProjectFactory(definition)
-    PO('Project', proj)
+    #PO('Project', proj)
 
 
 if __name__ == '__main__':
@@ -27,8 +27,8 @@ if __name__ == '__main__':
     milHome = os.environ.get('MILHOUSE_HOME')
     
     print "\nBeginning Project Creation Tests..."
-    makeProject(os.path.join(milHome, 'projects', 'definitions', 'test.csv'))
-    #makeProject('/Users/dvillagra/milhouse_dev/dev/projects/definitions/test.csv')
+    makeProject(os.path.join(milHome, 'projects', 'definitions', 'test_advanced.csv'))
+    #makeProject(os.path.join(milHome, 'projects', 'definitions', 'test_existing.csv'))
     print "Project Creation Tests Complete!\n"
     
     
