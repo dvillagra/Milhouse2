@@ -8,7 +8,7 @@ import os
 import re
 import glob
 import numpy as n
-from django.core.exceptions import ObjectDoesNotExist 
+from django.core.exceptions import ObjectDoesNotExist
 
 import pycore.MUtils as MU
 from django_code.models import SecondaryAnalysisServer
@@ -21,7 +21,7 @@ class SMRTCellDataPathValidator(object):
     def __init__(self, dataPath, primaryFolder):
         self.dataPath      = dataPath
         self.primaryFolder = primaryFolder
-        
+            
     def isValid(self):
         if not os.path.exists(os.path.join(self.dataPath, self.primaryFolder)):
             msg = 'SMRTCellPath [%s] does not contain primary folder [%s]' % (self.dataPath, self.primaryFolder)
@@ -53,11 +53,9 @@ class ExperimentDefinitionValidator(object):
     @staticmethod
     def getExtractByValues():
         return ['Readlength', 'TemplateSpan', 'NErrors', 'ReadFrames', 
-                'FrameRates', 'IPD', 'PulseWidth', 'Accuracy', 'PolRate']
-    
-    @staticmethod
-    def getFilterByValues():
-        return ['Productivity', 'Readlength', 'Accuracy']
+                'FrameRates', 'IPD', 'PulseWidth', 'Accuracy', 'PolRate', 
+                'Reference', 'Barcode', 'Movie']
+        
         
     def __init__(self, csv):
         self.csv = self._getDefinitionRecArray(csv)
@@ -77,23 +75,28 @@ class ExperimentDefinitionValidator(object):
     def getExperimentDefinition(self):
         return self.csv
         
+        
+    def getDefinitionType(self):
+        # Check to see that valid headers were supplied
+        csvHeaders = filter(lambda x: not x.startswith('p_'), self.csv.dtype.names)
+        jobType = None        
+        for m in self.getHeaderValues(True).values():
+            if all([x in csvHeaders for x in m]):
+                jobType = self.getHeaderValues(minimal=True, reverse=True).get(m)
+        return jobType
     
     def validateDefinition(self):
         csv = self.csv
         allHeaders = self.getHeaderValues()
         minHeaders = self.getHeaderValues(True)
+        csvHeaders = filter(lambda x: not x.startswith('p_'), csv.dtype.names)
         
         if csv is None:
             msg = '[%s] is not a valid file name or stream' % str(self.csv)
             return (False, msg)
         
         # Check to see that valid headers were supplied
-        csvHeaders = filter(lambda x: not x.startswith('p_'), csv.dtype.names)
-        jobType = None        
-        for m in minHeaders.values():
-            if all([x in csvHeaders for x in m]):
-                jobType = self.getHeaderValues(minimal=True, reverse=True).get(m)
-                
+        jobType = self.getDefinitionType()    
         if not jobType:
             msg = 'Invalid headers supplied in input csv: %s' % str(csvHeaders)
             return (False, msg)
@@ -106,7 +109,7 @@ class ExperimentDefinitionValidator(object):
         # Check for unpopulated default columns
         minColnames = minHeaders.get(jobType)
         wrngclmns = filter(lambda x: n.dtype(x[1]) == n.dtype(bool) and x[0] in minColnames, csv.dtype.descr)
-        if wrngclmns:
+        if wrngclmns: 
             msg = 'Incorrectly formatted CSV file:\n Column(s) [%s] have not been populated' % ', '.join([c[0] for c in wrngclmns])
             return (False, msg)
 
@@ -133,7 +136,7 @@ class ExperimentDefinitionValidator(object):
         # Check if the non-default columns have a p_ prefix
         allColnames = allHeaders.get(jobType)
         extras = filter(lambda x: x not in allColnames, csv.dtype.names)
-        if not filter(lambda x: x.startswith('p_'), extras):
+        if extras and not filter(lambda x: x.startswith('p_'), extras):
             msg = 'Incorrectly formatted CSV file:\n Extra parameters need to be named using a "p_" prefix' 
             return (False, msg)
         
@@ -201,42 +204,39 @@ class ExperimentDefinitionValidator(object):
         # Check for uniqueness of column values within conditions
         for cond in n.unique(csv['Name']):
             condRows = csv[csv['Name'] == cond]
-            notUnique = ['SecondaryJobID', 'SecondaryServerName', 'SMRTCellPath', 'PrimaryFolder']
+            notUnique = ['SecondaryJobID', 'SecondaryServerName', 'SMRTCellPath', 'PrimaryFolder', 'SecondaryProtocol']
             if filter(lambda x: len(n.unique(condRows[x])) != 1, [k for k in condRows.dtype.names if k not in notUnique]):
                 msg = 'For condition name=%s some of the attributes are NOT unique' % cond
                 return (False, msg)  
 
             
-        # Check to make sure that split/merge/filter was specified correctly
+        # Check to make sure that split/merge was specified correctly
         if 'ExtractBy' in csvHeaders:
             for e in csv['ExtractBy']:
-                colons = [m.start() for m in re.finditer(':', e)]
-                if colons and len(colons) == 1:
-                    k = e.split(':')[0]
-                    validExtract = ExperimentDefinitionValidator.getExtractByValues()
-                    if not k in validExtract:
-                        msg = 'Please select valid ExtractBy option: %s' % ', '.join(validExtract)
-                        return (False, msg)
+                bOps = ['>', '<', '==', '!=', '!==', '>=', '<=']
+                combs = ['&', '|']
+                opsUsed = filter(lambda x: x in e, bOps)
+                if not opsUsed:
+                    msg = 'Illegal syntax for ExtractBy field, please use binary operator statement (e.g. Readlength > 1000)'
+                    return (False, msg)
+                combsUsed = filter(lambda x: x in e, combs)
+                if combsUsed:
+                    e = [x.strip() for x in re.split(r'[&\|]+', e)]
                 else:
-                    msg = 'Illegal syntax for ExtractBy field, please use Key:Value format'
+                    e = [e]
+                validExtract = ExperimentDefinitionValidator.getExtractByValues()
+                if not all([any([v in x for v in validExtract]) for x in e]):
+                    msg = 'Invalid ExtractBy [%s]. Please select valid ExtractBy option: %s' % (e, ', '.join(validExtract))
                     return (False, msg)
-        
-        if 'FilterBy' in csvHeaders:
-            for f in csv['FilterBy']:
-                validFilter = ExperimentDefinitionValidator.getFilterByValues()
-                if not any(filter(lambda x: x in f, validFilter)):
-                    msg = 'Please select valid FilterBy option: %s' % ', '.join(validFilter)
-                    return (False, msg)
-                
+                    
+                    
                 
         # Check to make sure that protocol is split/merge-able.
         if 'ExtractBy' in csvHeaders:
             for p, e in zip(csv['SecondaryProtocol'], csv['ExtractBy']):
                 if not re.findall('([Rr]esequencing|[Mm]apping)', p):
-                    msg = 'SecondaryProtocol [%s] cannot be extracted by [%s]' % (p, e)
-                    return (False, msg)
+                    msg = 'SecondaryProtocol [%s] may not be extractable by [%s].  Does the protocol generate a cmp.h5?' % (p, e)
+                    return (True, msg)
                 
         
         return (True, 'CSV file passed validation')
-        
-        
