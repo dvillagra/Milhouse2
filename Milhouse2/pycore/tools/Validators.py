@@ -12,7 +12,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 import pycore.MUtils as MU
 from django_code.models import SecondaryAnalysisServer
-from pycore.SecondaryJobHandler import SecondaryDataHandler
+from pycore.SecondaryJobHandler import SecondaryDataHandlerFactory
 from pycore.tools.LIMSHandler import LIMSMapper
 
 
@@ -123,7 +123,7 @@ class ExperimentDefinitionValidator(object):
             secondaryServers = [SecondaryAnalysisServer.objects.get(serverName=x) for x in csv['SecondaryServerName']]
             secondaryServers = dict((x.serverName, x) for x in secondaryServers)
             serverNames = n.unique(secondaryServers.keys())
-            dataHandlerDict = dict([(s, SecondaryDataHandler(secondaryServers.get(s))) for s in serverNames])
+            dataHandlerDict = dict([(s, SecondaryDataHandlerFactory(secondaryServers.get(s), disk=False)) for s in serverNames])
         except ObjectDoesNotExist:
             msg = 'Invalid SecondaryServerName. Valid values are: %s' % (', '.join([x.serverName for x in SecondaryAnalysisServer.objects.all()]))
             return (False, msg)
@@ -194,10 +194,13 @@ class ExperimentDefinitionValidator(object):
             # Check to make sure that jobs actually exist on specified servers
             serverPropDict = dict([(s, dataHandlerDict[s].makePropertyDict(('Jobs'))) for s in serverNames])
             for s,j in zip(csv['SecondaryServerName'], csv['SecondaryJobID']):
-                if not j in serverPropDict[s].get('Jobs'):
+                jobIDs = serverPropDict[s].get('Jobs')
+                if not j in jobIDs:
                     msg = 'Job ID [%s] does not exist on server [%s]' % (j,s)
                     return (False, msg)
-            
+                elif len(filter(lambda x: x==j, jobIDs)) != 1:
+                    msg = 'Job ID [%s] does not match to unique job on server [%s]' % (j,s)
+                    return (False, msg)
         
         # HERE'S THE ADVANCED STUFF
  

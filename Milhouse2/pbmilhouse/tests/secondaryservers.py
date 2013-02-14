@@ -5,7 +5,7 @@ Created on Feb 6, 2013
 '''
 
 from pbmilhouse import PBUtils as PBU
-from pycore.SecondaryJobHandler import SecondaryDataHandler, SecondaryServerConnector
+from pycore.SecondaryJobHandler import SecondaryDataHandlerFactory, SecondaryServerConnector
 from pycore.TestUtils import printOut as PO
 
 def pingSecondaryServer(server):
@@ -18,58 +18,66 @@ def pingSecondaryServer(server):
 #  REFERENCES  #
 ################
 
-def getReferenceSequences(server):
-    sdata = SecondaryDataHandler(server)
-    req = sdata.getReferences()
+def getReferenceSequences(server, handler):
+    req = handler.getReferences()
     PO('Reference Seqs', req)
     
-def getReferenceEntries(server):
-    sdata = SecondaryDataHandler(server)
-    req = sdata.getReferenceEntries()
+def getReferenceEntries(server, handler):
+    req = handler.getReferenceEntries()
     PO('Reference Entries', req)   
     
-def getReferenceNames(server):
-    sdata = SecondaryDataHandler(server)
-    req = sdata.getReferenceNames()
+def getReferenceNames(server, handler):
+    req = handler.getReferenceNames()
     PO('Reference Names', req)
     
 
 #################
-#   WORKFLOWS   #
+#   PROTOCOLS   #
 #################
-def getProtocols(server):
-    sdata = SecondaryDataHandler(server)
-    req = sdata.getProtocols()
+def getProtocols(server, handler):
+    req = handler.getProtocols()
     PO('Protocols', req)
 
-def getProtocolNames(server):
-    sdata = SecondaryDataHandler(server)
-    req = sdata.getProtocolNames()
+def getProtocolNames(server, handler):
+    req = handler.getProtocolNames()
     PO('Protocol Names', req)
+
+
+#################
+#     JOBS      #
+#################
+def getJobs(server, handler):
+    req = handler.getJobs()
+    PO('Jobs', req)
+
+def getJobEntries(server, handler):
+    req = handler.getJobEntries()
+    PO('Job Entries', req)
+
+def getJobIDs(server, handler):
+    req = handler.getJobIDs()
+    PO('Job IDs', req)
+
 
 if __name__ == '__main__':
     
     print "Beginning Tests..."
     
-    print "\nBeginning SMRTPortal Tests..."
-    pbSmrtPortal = PBU.MP17_SMRT_SERVER
-    pingSecondaryServer(pbSmrtPortal)
-    getReferenceSequences(pbSmrtPortal)
-    getReferenceEntries(pbSmrtPortal)
-    getReferenceNames(pbSmrtPortal)
-    getProtocols(pbSmrtPortal)
-    getProtocolNames(pbSmrtPortal)
-    print "SMRTPortal Tests Complete!\n"
+    server = PBU.MP17_SMRT_SERVER
+    handler = SecondaryDataHandlerFactory(server, disk=False)
+    pingSecondaryServer(server)
     
-    
-#    print "\nBeginning Martin Tests..."
-#    pbMartinProd = PBU.MARTIN_PROD_SERVER
-#    pingSecondaryServer(pbMartinProd)
-#    getReferenceSequences(pbMartinProd)
-#    getReferenceEntries(pbMartinProd)
-#    getReferenceNames(pbMartinProd)
-#    print "\nMartin Tests Complete!\n\n"
-    
+#    getReferenceSequences(server, handler)
+#    getReferenceEntries(server, handler)
+#    getReferenceNames(server, handler)
+#    
+#    getProtocols(server, handler)
+#    getProtocolNames(server, handler)
+#    
+#    getJobs(server, handler)
+    getJobEntries(server, handler)
+    getJobIDs(server, handler)
+
     print "Tests completed..."
     
     

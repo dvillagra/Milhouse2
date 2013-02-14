@@ -58,7 +58,7 @@ class SecondaryJob(BaseModel):
     cells      = models.ManyToManyField(SMRTCell)
     reference  = models.CharField(max_length=50)
     protocol   = models.CharField(max_length=50)
-    server     = models.ForeignKey(SecondaryAnalysisServer)    
+    server     = models.ForeignKey(SecondaryAnalysisServer)
     #server     = models.SmallIntegerField(choices = enums.SECONDARY_JOB_TYPE)
     status     = models.SmallIntegerField(choices = enums.SECONDARY_STATUS)
     

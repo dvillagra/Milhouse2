@@ -4,6 +4,9 @@ Created on Feb 5, 2013
 @author: dvillagra
 '''
 
+def getChoice(enum, choice):
+    return dict([(y,x) for x,y in enum]).get(choice)
+
 # Collection Choices
 SECONDARY_JOB_TYPE = (('Martin', 'Martin'), 
                       ('SMRTPortal', 'SMRTPortal'))

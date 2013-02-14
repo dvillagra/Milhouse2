@@ -13,6 +13,7 @@ from pycore.tools.Validators import ExperimentDefinitionValidator
 from pycore import MUtils as MU
 from pycore import MEnums as enums
 from pycore.tools.LIMSHandler import LIMSMapper
+from pycore.SecondaryJobHandler import SecondaryDataHandlerFactory
 
 class ProjectFactory(object):
     
@@ -61,7 +62,7 @@ class ProjectFactory(object):
                         jobObj = SecondaryJob(protocol  = job[1],
                                               reference = job[2],
                                               server    = secondaryServer,
-                                              status    = enums.getChoice(enums.SECONDARY_STATUS, 'INSTANTIATED')
+                                              status    = enums.getChoice(enums.SECONDARY_STATUS, 'INSTANTIATED') 
                                               )
                         jobObj.save()
                         
@@ -100,7 +101,16 @@ class ProjectFactory(object):
                             server = SecondaryAnalysisServer.objects.get(serverName=serverName)
                             newJob, created = SecondaryJob.objects.get_or_create(jobID = job, server = server)
                             
-                            # Add other job info in here...
+                            # Add other job info in here if job was newly created...
+                            if created:
+                                sdh = SecondaryDataHandlerFactory(server, disk=True)
+                                jobDict = sdh.getJobEntries(apiCall='jobs/%s' % newJob.jobID)
+                                refSeq = jobDict[0].get('referenceSequenceName', 'unknown')
+                                protocol = jobDict[0].get('protocolName', 'unknown')
+                                
+                                # Get the SMRT Cells and add them
+                                
+                            
                             
                             secondaryJobs.append(newJob)
                         
@@ -125,3 +135,5 @@ class ProjectFactory(object):
                 return {'SecondaryJobs' : jobs,
                         'Conditions'    : conditions,
                         'Project'       : project}
+                
+                
