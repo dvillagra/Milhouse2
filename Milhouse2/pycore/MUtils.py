@@ -26,11 +26,19 @@ def getJobDiskPath(basePath, jobID):
 def getCellContext(smrtcell):
     pass
 
+def limsCodeFromCellPath(cellPath):
+    try:
+        nums = cellPath.split('/')[-2:]
+        [int(x) for x in nums]
+        return '-'.join(nums)
+    except Exception:
+        return None
+
 def cellInfoFromFofnLine(fofnLine, limsCode = False, withContext = False):
     cellPath = os.path.dirname(os.path.dirname(fofnLine))
     primaryFolder = os.path.basename(os.path.dirname(fofnLine))
     context = getCellContext(os.path.basename(fofnLine)) if withContext else ''
-    limsCode = '-'.join(cellPath.split('/')[3:4]) if limsCode else ''
+    limsCode =  limsCodeFromCellPath(cellPath) if limsCode else ''
     
     return {'SMRTCellPath'  : cellPath, 
             'PrimaryFolder' : primaryFolder, 

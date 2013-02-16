@@ -8,6 +8,7 @@ import os
 import numpy as n
 from django_code.models import SMRTCell, SecondaryAnalysisServer, SecondaryJob, Condition, Project
 from django.forms.models import model_to_dict
+from django.utils import simplejson
 
 from pycore.tools.Validators import ExperimentDefinitionValidator
 from pycore import MUtils as MU
@@ -17,123 +18,189 @@ from pycore.SecondaryJobHandler import SecondaryDataHandlerFactory
 
 class ProjectFactory(object):
     
-    def __init__(self, definition):
-        self.validator  = ExperimentDefinitionValidator(definition)
-        self.definition = self.validator.getExperimentDefinition() 
+    @staticmethod
+    def validateProjectDefinition(definition):
+        validator  = ExperimentDefinitionValidator(definition)
+        definition = validator.getExperimentDefinition()
+        isValid, validMsg = validator.validateDefinition()
+        return (isValid, validMsg)
+    
+    @staticmethod
+    def create(definition):
+        classString = 'ProjectFactoryCreate'
+        MU.logMsg(classString, 'Submitting project definition for validation and object creation', 'info')
+        
+        validator  = ExperimentDefinitionValidator(definition)
+        definition = validator.getExperimentDefinition()
+        isValid, validMsg = validator.validateDefinition()
+        
+        MU.logMsg(classString, 'Project definition validation result: %s' % validMsg, 'info')
+        
+        if not isValid:
+            print 'Invalid definition! %s' % validMsg
+        
 
-    def __str__(self):
-        return self.definition
+        secondaryJobObjects = {}
+        conditionObjects    = []
+        projectObject       = None
         
-    def validateProjectDefinition(self):
-        self.is_valid, self.valid_msg = self.validator.validateDefinition()
-        
-    def create(self):
-        MU.logMsg(self, 'Validating project definition', 'info')
-        self.validateProjectDefinition()
-        MU.logMsg(self, 'Validation result: %s' % self.valid_msg, 'info')
-        
-        if not self.is_valid:
-            print 'Invalid definition! %s' % self.valid_msg
         
         # If valid csv, start to populate database objects
-        if self.is_valid:
-            csv = self.definition
-            csvType = self.validator.getDefinitionType()
-            
-            
+        if isValid:
+            csv = definition
+            csvType = validator.getDefinitionType()
+                        
             def createSecondaryJobs():
                 
-                secondaryJobs = []
-                
-                # If this is a new secondary job, populate the necessary database tables
-                if csvType == 'newJob':
-                    
-                    uniqueJobs = n.unique(zip(csv['SecondaryServerName'], 
-                                              csv['SecondaryProtocol'], 
-                                              csv['SecondaryReference']))
-                    print "UNIQUE JOBS\n%s\n" % str(uniqueJobs)
-                    
-                    for job in uniqueJobs:
-                        msg = 'Creating SecondaryJob for job info: %s' % str(job)
-                        MU.logMsg(self, msg, 'info')
+                # Do it by condition
+                conditions = n.unique(csv['Name'])
+                newJobDefs = {}
+                for cond in conditions:                       
+                    condRows = csv[csv['Name'] == cond]                        
                         
-                        # First make the job, but don't save it
-                        secondaryServer = SecondaryAnalysisServer.objects.get(serverName=job[0])
-                        jobObj = SecondaryJob(protocol  = job[1],
-                                              reference = job[2],
-                                              server    = secondaryServer,
-                                              status    = enums.getChoice(enums.SECONDARY_STATUS, 'INSTANTIATED') 
-                                              )
-                        jobObj.save()
+                    # If this is a new secondary job, populate the necessary database tables
+                    if csvType == 'newJob':
                         
-                        # Now add the cells
-                        jobRows = csv[(csv['SecondaryServerName'] == job[0]) & \
-                                      (csv['SecondaryProtocol']   == job[1]) & \
-                                      (csv['SecondaryReference']  == job[2])]
+                        print 'Creating secondary jobs for condition: %s' % cond
                         
-                        jobCells = n.unique(zip(jobRows['SMRTCellPath'], jobRows['PrimaryFolder']))
-                        smrtCells = []
-                        for c in jobCells:
-                            path, primaryFolder = tuple(c)
-                            msg = 'Creating or accessing SMRTCell for data path: %s' % os.path.join(path, primaryFolder)
-                            MU.logMsg(self, msg, 'info')
-                            if os.path.exists(path):
-                                # This is a data path
-                                cell, created = SMRTCell.objects.get_or_create(path=path, primaryFolder=primaryFolder)
-                                smrtCells.append(cell)
+                        uniqueJobs = n.unique(zip(condRows['SecondaryServerName'], 
+                                                  condRows['SecondaryProtocol'], 
+                                                  condRows['SecondaryReference']))
+
+                        for job in uniqueJobs:
+                            msg = 'Creating SecondaryJob for job info: %s' % str(job)
+                            MU.logMsg(classString, msg, 'info')
+                            
+                            # First make the job, but don't save it
+                            secondaryServer    = SecondaryAnalysisServer.objects.get(serverName=job[0])
+                            sdh = SecondaryDataHandlerFactory.create(secondaryServer, disk=False)
+                            
+                            secondaryProtocol  = sdh.getSingleEntryBy('protocol', {'name' : job[1]})
+                            secondaryReference = sdh.getSingleEntryBy('reference', {'name' : job[2]})
+                            protocolEntry = {'name': secondaryProtocol.get('name', 'unknown'), 
+                                             'lastModified': secondaryProtocol.get('whenModified')}
+                            referenceEntry = {'name': secondaryReference.get('name', 'unknown'), 
+                                             'lastModified': secondaryReference.get('last_modified')}
+                                                        
+                            jobDef = {'protocol'  : simplejson.dumps(protocolEntry),
+                                      'reference' : simplejson.dumps(referenceEntry),
+                                      'server'    : secondaryServer}
+                            
+                            # Now add the cells
+                            jobRows = condRows[(condRows['SecondaryServerName'] == job[0]) & \
+                                               (condRows['SecondaryProtocol']   == job[1]) & \
+                                               (condRows['SecondaryReference']  == job[2])]
+                            
+                            jobCells = n.unique(zip(jobRows['SMRTCellPath'], jobRows['PrimaryFolder']))
+                            smrtCells = []
+                            for c in jobCells:
+                                path, primaryFolder = tuple(c)
+                                msg = 'Creating or accessing SMRTCell for data path: %s' % os.path.join(path, primaryFolder)
+                                MU.logMsg(classString, msg, 'info')
+                                if os.path.exists(path):
+                                    # This is a data path
+                                    cell = SMRTCell.objects.get_or_create(path=path, primaryFolder=primaryFolder)
+                                    smrtCells.append(cell[0])
+                                else:
+                                    # this is a LIMS Code
+                                    dataPath = LIMSMapper(path).getDataPath()
+                                    cell = SMRTCell.objects.get_or_create(path=dataPath, primaryFolder=primaryFolder, limsCode=path)
+                                    smrtCells.append(cell[0])
+                            
+                            # Add the SMRT Cells
+                            jobDef['cells'] = smrtCells
+                            hasJob = False
+                            for pk, jd in newJobDefs.iteritems():
+                                if jobDef == jd:
+                                    hasJob = True
+                                    jobObj = SecondaryJob.objects.get(id=pk)
+                            
+                            if not hasJob:
+                                cells = jobDef.pop('cells')
+                                jobObj = SecondaryJob(**jobDef)
+                                jobObj.save()
+                                jobObj.cells.add(*cells)
+                                jobDef['cells'] = cells
+                                newJobDefs[jobObj.id] = jobDef
+
+                            msg = 'Successfully created and saved SecondaryJob: %s' % str(model_to_dict(jobObj))                      
+                            MU.logMsg(classString, msg, 'info')
+                            
+                            # Link secondary job to condition
+                            if not secondaryJobObjects.has_key(cond):
+                                secondaryJobObjects[cond] = [jobObj]
                             else:
-                                # this is a LIMS Code
-                                dataPath = LIMSMapper(path).getDataPath()
-                                cell, created = SMRTCell.objects.get_or_create(path=dataPath, primaryFolder=primaryFolder, limsCode=path)
-                                smrtCells.append(cell)
-                        
-                        # Add the SMRT Cells
-                        [jobObj.cells.add(x) for x in smrtCells]
-                        
-                        msg = 'Successfully created and saved SecondaryJob: %s' % str(model_to_dict(jobObj))                      
-                        MU.logMsg(self, msg, 'info')
-                        
-                        secondaryJobs.append(jobObj)
-                    
+                                secondaryJobObjects[cond].append(jobObj)
+
+                            
                     else:
                         # Job already exists
-                        for job, serverName in zip(csv['SecondaryJobID'], csv['SecondaryServerName']):
+                        for job, serverName in zip(condRows['SecondaryJobID'], condRows['SecondaryServerName']):
                             server = SecondaryAnalysisServer.objects.get(serverName=serverName)
                             newJob, created = SecondaryJob.objects.get_or_create(jobID = job, server = server)
                             
                             # Add other job info in here if job was newly created...
                             if created:
-                                sdh = SecondaryDataHandlerFactory(server, disk=True)
-                                jobDict = sdh.getJobEntries(apiCall='jobs/%s' % newJob.jobID)
-                                refSeq = jobDict[0].get('referenceSequenceName', 'unknown')
-                                protocol = jobDict[0].get('protocolName', 'unknown')
+                                sdh = SecondaryDataHandlerFactory.create(server, disk=False)
+                                jobID = newJob.jobID
+                                jobEntry = sdh.getSingleJobEntry(jobID)
                                 
-                                # Get the SMRT Cells and add them
+                                # Add protocol info                 
+                                protocol = jobEntry.get('protocolName')                             
+                                secondaryProtocol  = sdh.getSingleEntryBy('protocol', {'id' : protocol})
+                                protocolEntry = {'name': secondaryProtocol.get('name', 'unknown'), 
+                                                 'lastModified': secondaryProtocol.get('whenModified')}
                                 
+                                newJob.protocol  = simplejson.dumps(protocolEntry)
+                                
+                                # Add reference info
+                                refSeq = jobEntry.get('referenceSequenceName')
+                                secondaryReference = sdh.getSingleEntryBy('reference', {'name' : refSeq})
+                                referenceEntry = {'name': secondaryReference.get('name', 'unknown'), 
+                                                 'lastModified': secondaryReference.get('last_modified')}
+                                newJob.reference = simplejson.dumps(referenceEntry)
+                                    
+                                newJob.save()
+                                
+                                # Get the SMRT Cells
+                                smrtCells = sdh.getSMRTCellInfo(jobID)
+                                smrtCellObjs = []
+                                for c in smrtCells: 
+                                    cell = SMRTCell.objects.get_or_create(path = c['collectionPathUri'],
+                                                                          primaryFolder = c['primaryResultsFolder'],
+                                                                          limsCode = MU.limsCodeFromCellPath(c['collectionPathUri']))
+                                    smrtCellObjs.append(cell[0])
                             
-                            
-                            secondaryJobs.append(newJob)
+                                # Now add the SMRT Cells to the new job
+                                [newJob.cells.add(x) for x in smrtCellObjs]
+                                
+                            # Link secondary job to condition
+                            if not secondaryJobObjects.has_key(cond):
+                                secondaryJobObjects[cond] = [newJob]
+                            else:
+                                secondaryJobObjects[cond].append(newJob)
+
                         
-                    return secondaryJobs
+                        #secondaryJobs.append(newJob)
+                        
+                print 'SECONDARY JOBS ARE: %s' % secondaryJobObjects
+                return secondaryJobObjects
                 
                 
-                def createConditions():
-                    conditions = []
-                    
-                    return conditions
+            def createConditions():
                 
-                def createProject():
-                    project = None
-                    
-                    return project
+                return conditionObjects
+            
+            def createProject():
                 
-                
-                jobs = createSecondaryJobs()
-                conditions = createConditions()
-                project = createProject()
-                
-                return {'SecondaryJobs' : jobs,
-                        'Conditions'    : conditions,
-                        'Project'       : project}
-                
+                return projectObject
+                                
+            jobs = createSecondaryJobs()
+            conditions = createConditions()
+            project = createProject()
+            
+            return {'SecondaryJobs' : jobs,
+                    'Conditions'    : conditions,
+                    'Project'       : project}
+
                 

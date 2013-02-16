@@ -64,19 +64,20 @@ if __name__ == '__main__':
     print "Beginning Tests..."
     
     server = PBU.MP17_SMRT_SERVER
-    handler = SecondaryDataHandlerFactory(server, disk=False)
+    handler = SecondaryDataHandlerFactory.create(server, disk=False)
     pingSecondaryServer(server)
     
-#    getReferenceSequences(server, handler)
-#    getReferenceEntries(server, handler)
-#    getReferenceNames(server, handler)
-#    
-#    getProtocols(server, handler)
-#    getProtocolNames(server, handler)
-#    
-#    getJobs(server, handler)
+    getReferenceSequences(server, handler)
+    getReferenceEntries(server, handler)
+    getReferenceNames(server, handler)
+    
+    getProtocols(server, handler)
+    getProtocolNames(server, handler)
+    
+    getJobs(server, handler)
     getJobEntries(server, handler)
     getJobIDs(server, handler)
+    getSingleEntryBy(server, handler, '55842')
 
     print "Tests completed..."
     

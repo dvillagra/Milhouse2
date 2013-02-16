@@ -12,7 +12,7 @@ os.environ['DJANGO_SETTINGS_MODULE'] = 'django_code.settings'
 from django_code.models import SecondaryAnalysisServer
 
 
-MP17_SMRT_SERVER_CONFIG = {'serverName'    : 'SMRTPortal_MP17',
+MP17_SMRT_SERVER_CONFIG = {'serverName'    : 'SMRTPortalMP17',
                            'serverHost'    : 'mp-f017', 
                            'serverPort'    : 8080,
                            'homePath'      : '/mnt/secondary/Smrtanalysis/opt/smrtanalysis/',
@@ -38,6 +38,24 @@ MARTIN_PROD_SERVER_CONFIG = {'serverName'    : 'MartinProd',
 
 
 MARTIN_PROD_SERVER = SecondaryAnalysisServer(**MARTIN_PROD_SERVER_CONFIG)
+
+
+MP17DVLOCAL_SMRT_SERVER_CONFIG = {'serverName'    : 'SMRTPortalMP17DVLocal',
+                                  'serverHost'    : 'mp-f017', 
+                                  'serverPort'    : 8080,
+                                  'homePath'      : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/',
+                                  'jobDataPath'   : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/jobs/',
+                                  'referencePath' : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/references/',
+                                  'protocolPath'  : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/protocols/',
+                                  'apiRootPath'   : '/smrtportal/api/', 
+                                  'active'        : True}
+
+
+
+MP17DVLOCAL_SMRT_SERVER = SecondaryAnalysisServer(**MP17DVLOCAL_SMRT_SERVER_CONFIG)
+
+
+
 
 ####################
 #  CSV_VALIDATION  #

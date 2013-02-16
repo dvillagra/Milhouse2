@@ -51,21 +51,16 @@ class SecondaryAnalysisServer(BaseModel):
     referencePath = models.CharField(max_length=100)
     protocolPath  = models.CharField(max_length=100)
     apiRootPath   = models.CharField(max_length=50, default='/smrtportal/api/')
-    active        = models.BooleanField(default=False)
+    active        = models.BooleanField(default=False)    
 
 class SecondaryJob(BaseModel):
-    jobID      = models.IntegerField(default=0)
+    jobID      = models.IntegerField(null=True, blank=True, unique=True)
     cells      = models.ManyToManyField(SMRTCell)
-    reference  = models.CharField(max_length=50)
-    protocol   = models.CharField(max_length=50)
+    reference  = jsonfield.JSONField()
+    protocol   = jsonfield.JSONField()
     server     = models.ForeignKey(SecondaryAnalysisServer)
-    #server     = models.SmallIntegerField(choices = enums.SECONDARY_JOB_TYPE)
-    status     = models.SmallIntegerField(choices = enums.SECONDARY_STATUS)
+    status     = models.SmallIntegerField(choices = enums.SECONDARY_STATUS, default=1)
     
-    class Meta:
-        unique_together = ('jobID', 'server',)
-
-
 class AnalysisProcedure(BaseModel):
     name         = models.CharField(max_length=50)
     group        = models.CharField(max_length=25)
@@ -88,7 +83,7 @@ class Project(BaseModel):
     description      = models.TextField(max_length=500)
     tags             = models.CharField(max_length=100)
     analysisGroup    = models.ManyToManyField(AnalysisProcedureGroup)
-    status           = models.SmallIntegerField(choices = enums.PROJECT_STATUS)
+    status           = models.SmallIntegerField(choices = enums.PROJECT_STATUS, default=1)
     
 class ProjectComment(BaseModel):
     comment = models.TextField(max_length=500)
@@ -112,7 +107,7 @@ class Condition(BaseModel):
     filter_expr   = models.CharField(max_length=500)
     extractDict   = jsonfield.JSONField(null=True, blank=True)
     extrasDict    = jsonfield.JSONField(null=True, blank=True)
-    status        = models.SmallIntegerField(choices = enums.CONDITION_STATUS)
+    status        = models.SmallIntegerField(choices = enums.CONDITION_STATUS, default=1)
     project       = models.ForeignKey(Project)
 
 class ConditionJSON(BaseModel):

@@ -71,11 +71,12 @@ class SecondaryServerConnector(object):
 class SecondaryDataHandlerFactory(object):
     
     @staticmethod
-    def create(server, disk, isPBMartin=False):
-        if isPBMartin:
+    def create(server, disk):
+        if 'martin' in server.serverName.lower():
             # This is specific to PacBio only, do not set this to true for non-PacBio installs!!
             from pbmilhouse.MartinJobHandler import MartinDataHandlerFactory 
-            return MartinDataHandlerFactory(server, disk)
+            return MartinDataHandlerFactory.create(server, disk)
+        # All other Milhouse instance should go through this path
         if disk:
             return SecondaryDataHandlerDisk(server)
         else:
@@ -111,6 +112,9 @@ class SecondaryDataHandler(object):
     def getJobIDs(self):
         pass
 
+    def makePropertyDict(self):
+        pass
+
 class SecondaryDataHandlerAPI(SecondaryDataHandler):
     
     def _makeAPICall(self, apiCall, apiParams=None):
@@ -120,22 +124,36 @@ class SecondaryDataHandlerAPI(SecondaryDataHandler):
     def _getElemDict(self, elems):
         return elems.get('rows', [])
         
-    def _getElemFrom(self, elemDict, getBy, fallback=None):
-        return [r.get(getBy, fallback) for r in elemDict]
+    def _getElemFrom(self, elemDictList, getBy, fallback=None):
+        return [r.get(getBy, fallback) for r in elemDictList]
     
+    def _getSingleElemFrom(self, elemDict, getBy=None, fallback=None):
+        if isinstance(elemDict, list) and len(elemDict) > 1:
+            raise Exception('Expecting dictionary, got list: %s' % elemDict)
+        elif not elemDict:
+            raise Exception('Need dictionary to extract element, got nothing!')
+        elif isinstance(elemDict, list) and len(elemDict) == 1:
+            elemDict = elemDict[0]
+        else:
+            if getBy:
+                return elemDict.get(getBy, fallback)
+            else:
+                return elemDict
+        
     ## REFERENCES
     def getReferences(self, apiCall='reference-sequences', apiParams=None):
         return self._makeAPICall(apiCall, apiParams)
     
     def getReferenceEntries(self, apiCall='reference-sequences', apiParams=None):
-        refRows = self._getElemDict(self.getReferences(apiCall, apiParams))
-        return self._getElemFrom(refRows, 'referenceEntry')
+        references = self.getReferences(apiCall, apiParams)
+        elemDict = self._getElemDict(references)
+        return self._getElemFrom(elemDict, 'referenceEntry')
             
-    def getReferenceElem(self, elem, apiCall='references', apiParams=None, fallback='none'):
-        return self._getElemFrom(self.getProtocolEntries(apiCall, apiParams), elem, fallback)    
+    def getReferenceElem(self, elem, apiCall='references-sequences', apiParams=None, fallback='none'):
+        return self._getElemFrom(self.getReferenceEntries(apiCall, apiParams), elem, fallback)    
 
     def getReferenceNames(self, apiCall='reference-sequences', apiParams=None):
-        return self._getReferenceElem('name', apiCall, apiParams)
+        return self.getReferenceElem('name', apiCall, apiParams)
         
 
     ## PROTOCOLS
@@ -143,38 +161,74 @@ class SecondaryDataHandlerAPI(SecondaryDataHandler):
         return self._makeAPICall(apiCall, apiParams)
         
     def getProtocolEntries(self, apiCall='protocols', apiParams=None):
-        return self._getElemDict(self.getProtocols(apiCall, apiParams))
+        protocols = self.getProtocols(apiCall, apiParams)
+        elemDict = self._getElemDict(protocols)
+        return elemDict if elemDict else protocols
         
     def getProtocolElem(self, elem, apiCall='protocols', apiParams=None, fallback='none'):
         return self._getElemFrom(self.getProtocolEntries(apiCall, apiParams), elem, fallback)    
     
     def getProtocolNames(self, apiCall='protocols', apiParams=None):
-        return self._getProtocolElem('name', apiCall, apiParams)
+        return self.getProtocolElem('name', apiCall, apiParams)
     
     
     ## JOBS
+    
+    # XXX I'm not sure how I feel about all of these different methods, it's starting to get messy
+    # especially when you think about the separate Martin implementation and how that will return 
+    # data in a different format
+    
     def getJobs(self, apiCall='jobs', apiParams=None):
         return self._makeAPICall(apiCall, apiParams)
     
     def getJobEntries(self, apiCall='jobs', apiParams=None):
-        return self._getElemDict(self.getJobs(apiCall, apiParams))
+        jobs = self.getJobs(apiCall, apiParams)
+        elemDict = self._getElemDict(jobs)
+        return elemDict if elemDict else [jobs]
     
-    def getJobElem(self, elem, apiCall='jobs', apiParams=None, fallback='none'):
-        return self._getElemFrom(self.getJobEntries(apiCall, apiParams), elem, fallback)
+    def getSingleJobEntry(self, jobID, apiParams=None):
+        return self._getSingleElemFrom(self.getJobs('jobs/%s' % jobID))
     
+    def getJobElems(self, elem, apiCall='jobs', apiParams=None, fallback='none'):
+        jobEntries = self.getJobEntries(apiCall, apiParams)
+        return self._getElemFrom(jobEntries, elem, fallback)
+    
+    def getSingleJobElem(self, elem, jobID, apiParams=None):
+        entries = self.getJobEntries('jobs/%s' % jobID, apiParams)
+        return self._getSingleElemFrom(entries, elem)
+
     def getJobIDs(self, apiCall='jobs', apiParams=None):
-        return self._getJobElem('jobId', apiCall, apiParams)
+        return self.getJobElems('jobId', apiCall, apiParams)
+        
+    def getSMRTCellInfo(self, jobID, apiParams=None):
+        return self._getElemDict(self._makeAPICall('jobs/%s/inputs' % jobID))    
     
+    # Generic methods for accessing job, reference, or protocol entries
+    def getEntriesBy(self, entryType, params):
+        typeMap = {'reference' : self.getReferenceEntries(),
+                   'protocol'  : self.getProtocolEntries()}
+        if entryType.lower().endswith('s'):
+            entryType=entryType[:-1]
+        entries = typeMap[entryType.lower()]
+        return filter(lambda e: dict(filter(lambda (x,y): e[x]==y, params.iteritems())), entries)
+    
+    
+    def getSingleEntryBy(self, entryType, params):
+        entries = self.getEntriesBy(entryType, params)
+        if len(entries) > 1:
+            raise Exception('Multiple entries returned!: %s' % str(entries))
+        elif len(entries) == 0:
+            raise Exception('No entries found matching search parameters!')
+        else:
+            return entries[0]
     
     ## MAKE DICTIONARY WITH NAMES AND VALUES
-    def makePropertyDict(self, props=('References', 'Protocols', 'Jobs')):
+    def makePropertyDict(self, props=('References', 'Protocols')):
         propDict = {}
         if 'References' in props:
             propDict['References'] = self.getReferenceNames()
         if 'Protocols' in props:
             propDict['Protocols'] = self.getProtocolNames()
-        if 'Jobs' in props:
-            propDict['Jobs'] = self.getJobIDs()
         return propDict
     
     
@@ -213,40 +267,35 @@ class SecondaryDataHandlerDisk(SecondaryDataHandler):
                 return self.getSMRTCellInfo(jobID).get(elem)
             else:
                 tocXML = os.path.join(jobPath, 'toc.xml')
+                print 'toc xml', tocXML
                 parsedXML = self.parseJobXML(tocXML)
-                return parsedXML.get(elem, [])
+                print 'PARSED XML IS: %s' % parsedXML
+                return parsedXML.get(elem, 'unknown')
         except Exception as err:
             MU.logMsg(self, 'Unable to access job information from disk: %s' % err, 'info')
 
 
     def parseJobXML(self, tocXML):
         dataDict = {}
+        print open(tocXML).read()
         try:
             xmltree = parse(tocXML)
             header = xmltree.firstChild.getElementsByTagName('header')
-            dataRef = xmltree.firstChild.getElementsByTagName('dataReferences')
-            if header and dataRef:
+            if header:
                 header = header.pop()
-                dataRef = dataRef.pop()
-                mjid = int(header.getAttribute('id'))
+                jid = int(header.getAttribute('id'))
                 job = header.getElementsByTagName('job')
-                primFolder = dataRef.getElementsByTagName('tag')
-                if mjid and job and primFolder:
+                if jid and job:
                     job = job.pop()
-                    primFolder = primFolder.pop()
                     paramsDict = {node.tagName: node.firstChild.data for node in job.childNodes if node.nodeType != 3 and node.firstChild}
-    
+                    
+                    print 'PARAMS DICT: %s' % paramsDict
                     #dataDict['MartinStatus'] = parseMartinLog(mjid, 'smrtportal').values()
-    
                     if paramsDict.get('referenceSequenceName'):
                         dataDict['SecondaryReference'] = paramsDict.get('referenceSequenceName')
-    
                     if paramsDict.get('protocolName'):
                         dataDict['SecondaryProtocol'] = paramsDict.get('protocolName')
-    
-                    if primFolder.firstChild:
-                        dataDict['PrimaryFolder'] = primFolder.firstChild.data
-                        
+                            
         except ExpatError:
             msg = 'Attemtping to parse %s\'s toc.xml failed' % self.server.serverName
             MU.logMsg(self, msg, 'info')

@@ -123,7 +123,7 @@ class ExperimentDefinitionValidator(object):
             secondaryServers = [SecondaryAnalysisServer.objects.get(serverName=x) for x in csv['SecondaryServerName']]
             secondaryServers = dict((x.serverName, x) for x in secondaryServers)
             serverNames = n.unique(secondaryServers.keys())
-            dataHandlerDict = dict([(s, SecondaryDataHandlerFactory(secondaryServers.get(s), disk=False)) for s in serverNames])
+            dataHandlerDict = dict([(s, SecondaryDataHandlerFactory.create(secondaryServers.get(s), disk=False)) for s in serverNames])
         except ObjectDoesNotExist:
             msg = 'Invalid SecondaryServerName. Valid values are: %s' % (', '.join([x.serverName for x in SecondaryAnalysisServer.objects.all()]))
             return (False, msg)
@@ -150,11 +150,11 @@ class ExperimentDefinitionValidator(object):
                 serverProtocols = serverPropDict[s].get('Protocols', [])
                 serverReferences = serverPropDict[s].get('References', [])
                 referenceWhitelist = ['LIMSTemplates', 'LIMSTemplate']
-                if not p in serverProtocols:
-                    msg = 'Unsupported SecondaryProtocol name provided: %s' % p
+                if len(filter(lambda x: x==p, serverProtocols)) != 1:
+                    msg = 'SecondaryProtocol does not map to a single name on server: %s' % p
                     return (False, msg)
-                if not r in serverReferences and r not in referenceWhitelist:
-                    msg = 'Unsupported SecondaryReference name provided: %s' % r
+                if len(filter(lambda x: x==r, serverReferences)) != 1 and r not in referenceWhitelist:
+                    msg = 'SecondaryReference does not map to a single name on server: %s' % r
                     return (False, msg)
             
             # Check whether primary folder names are contained within the given run codes and pls.h5/bas.h5 files exist
@@ -180,6 +180,14 @@ class ExperimentDefinitionValidator(object):
                     else:
                         msg = 'SMRTCellPath could not be mapped to a unique LIMS Code: %s' % d
                         return (False, msg)
+            
+            # Check to make sure that protocol is split/merge-able.
+            if 'ExtractBy' in csvHeaders:
+                for p, e in zip(csv['SecondaryProtocol'], csv['ExtractBy']):
+                    if not re.findall('([Rr]esequencing|[Mm]apping)', p):
+                        msg = 'SecondaryProtocol [%s] may not be extractable by [%s].  Does the protocol generate a cmp.h5?' % (p, e)
+                        return (True, msg)
+
                         
         
         elif jobType == 'existingJob':
@@ -192,14 +200,12 @@ class ExperimentDefinitionValidator(object):
                 return (False, msg)
             
             # Check to make sure that jobs actually exist on specified servers
-            serverPropDict = dict([(s, dataHandlerDict[s].makePropertyDict(('Jobs'))) for s in serverNames])
             for s,j in zip(csv['SecondaryServerName'], csv['SecondaryJobID']):
-                jobIDs = serverPropDict[s].get('Jobs')
-                if not j in jobIDs:
-                    msg = 'Job ID [%s] does not exist on server [%s]' % (j,s)
-                    return (False, msg)
-                elif len(filter(lambda x: x==j, jobIDs)) != 1:
-                    msg = 'Job ID [%s] does not match to unique job on server [%s]' % (j,s)
+                sdh = dataHandlerDict.get(s)
+                try:
+                    sdh.getSingleJobEntry(j)
+                except Exception: # yes, this is bad... i know
+                    msg = 'Single Job ID [%s] does not exist on server [%s]' % (j,s)
                     return (False, msg)
         
         # HERE'S THE ADVANCED STUFF
@@ -208,9 +214,9 @@ class ExperimentDefinitionValidator(object):
         for cond in n.unique(csv['Name']):
             condRows = csv[csv['Name'] == cond]
             notUnique = ['SecondaryJobID', 'SecondaryServerName', 'SMRTCellPath', 'PrimaryFolder', 'SecondaryProtocol']
-            if filter(lambda x: len(n.unique(condRows[x])) != 1, [k for k in condRows.dtype.names if k not in notUnique]):
+            if filter(lambda x: len(n.unique(condRows[x])) != 1, [k for k in condRows.dtype.names if k not in notUnique and not k.startswith('p_')]):
                 msg = 'For condition name=%s some of the attributes are NOT unique' % cond
-                return (False, msg)  
+                return (False, msg) 
 
             
         # Check to make sure that split/merge was specified correctly
@@ -231,15 +237,6 @@ class ExperimentDefinitionValidator(object):
                 if not all([any([v in x for v in validExtract]) for x in e]):
                     msg = 'Invalid ExtractBy [%s]. Please select valid ExtractBy option: %s' % (e, ', '.join(validExtract))
                     return (False, msg)
-                    
-                    
-                
-        # Check to make sure that protocol is split/merge-able.
-        if 'ExtractBy' in csvHeaders:
-            for p, e in zip(csv['SecondaryProtocol'], csv['ExtractBy']):
-                if not re.findall('([Rr]esequencing|[Mm]apping)', p):
-                    msg = 'SecondaryProtocol [%s] may not be extractable by [%s].  Does the protocol generate a cmp.h5?' % (p, e)
-                    return (True, msg)
-                
+                                    
         
         return (True, 'CSV file passed validation')
