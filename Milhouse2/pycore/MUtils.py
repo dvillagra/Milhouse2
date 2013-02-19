@@ -12,6 +12,40 @@ import tempfile
 import subprocess
 
 
+def normalizeJobID(jobID, digits=6):
+    if isinstance(jobID, str):
+        return jobID.zfill(digits)
+    else:
+        formatStr = '%%0%dd' % digits
+        return formatStr % jobID
+
+def getJobDiskPath(basePath, jobID):
+    jobID = normalizeJobID(jobID)
+    return os.path.join(basePath, jobID[:3], jobID)
+
+def getCellContext(smrtcell):
+    pass
+
+def limsCodeFromCellPath(cellPath):
+    try:
+        nums = cellPath.split('/')[-2:]
+        [int(x) for x in nums]
+        return '-'.join(nums)
+    except Exception:
+        return None
+
+def cellInfoFromFofnLine(fofnLine, limsCode = False, withContext = False):
+    cellPath = os.path.dirname(os.path.dirname(fofnLine))
+    primaryFolder = os.path.basename(os.path.dirname(fofnLine))
+    context = getCellContext(os.path.basename(fofnLine)) if withContext else ''
+    limsCode =  limsCodeFromCellPath(cellPath) if limsCode else ''
+    
+    return {'SMRTCellPath'  : cellPath, 
+            'PrimaryFolder' : primaryFolder, 
+            'Context'       : context, 
+            'LIMSCode'      : limsCode}
+
+
 def parseMilhouseConf(confFN):
     confDict = {}
     for line in open(confFN, 'r'):
