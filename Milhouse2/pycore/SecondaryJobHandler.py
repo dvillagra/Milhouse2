@@ -28,7 +28,7 @@ class SecondaryServerConnectorError(Exception):
     def __str__(self):
         return repr(self.value)
     
-class SecondaryDataHandlerError(Exception):
+class SecondaryJobServiceError(Exception):
     def __init__(self, value):
         self.value = value
     def __str__(self):
@@ -79,19 +79,19 @@ class SecondaryServerConnector(object):
         
 
 
-class SecondaryDataHandlerFactory(object):
+class SecondaryJobServiceFactory(object):
     
     @staticmethod
     def create(server, disk):
         if 'martin' in server.serverName.lower():
             # This is specific to PacBio only, do not set this to true for non-PacBio installs!!
-            from pbmilhouse.MartinJobHandler import MartinDataHandlerFactory 
-            return MartinDataHandlerFactory.create(server, disk)
+            from pbmilhouse.MartinJobHandler import MartinJobServiceFactory
+            return MartinJobServiceFactory.create(server, disk)
         # All other Milhouse instance should go through this path
         if disk:
-            return SecondaryDataHandlerDisk(server)
+            return SecondaryJobServiceDisk(server)
         else:
-            return SecondaryDataHandlerAPI(server)
+            return SecondaryJobServiceAPI(server)
         
 #    @staticmethod
 #    def tryAllMethods(server, func):
@@ -100,7 +100,7 @@ class SecondaryDataHandlerFactory(object):
 
 
 
-class SecondaryDataHandler(object):
+class SecondaryJobService(object):
     
     def __init__(self, server):
         self.server  = server
@@ -108,9 +108,9 @@ class SecondaryDataHandler(object):
     
     def getSingleItem(self, items):
         if isinstance(items, list) and len(items) > 1:
-            raise SecondaryDataHandlerError('Multiple entries returned!: %s' % str(items))
+            raise SecondaryJobServiceError('Multiple entries returned!: %s' % str(items))
         elif not items:
-            raise SecondaryDataHandlerError('No entries found matching search parameters!')
+            raise SecondaryJobServiceError('No entries found matching search parameters!')
         elif isinstance(items, list) and len(items) == 1:
             return items[0]
         else:
@@ -136,8 +136,19 @@ class SecondaryDataHandler(object):
 
     def makePropertyDict(self):
         pass
+    
+    def parseSettingsXML(self):
+        pass
+    
+    def parseInputXML(self):
+        pass
 
-class SecondaryDataHandlerAPI(SecondaryDataHandler):
+class SecondaryJobServiceAPI(SecondaryJobService):
+    
+    
+    #################################
+    ##      HANDLE DATA  ACCESS    ##
+    #################################
     
     ## COMMON AND PRIVATE METHODS
     def makeAPICall(self, apiCall, apiParams=None):
@@ -178,6 +189,10 @@ class SecondaryDataHandlerAPI(SecondaryDataHandler):
     def getSingleReferenceEntryBy(self, params):
         entries = self.getReferenceEntriesBy(params)
         return self.getSingleItem(entries)
+    
+    def getSingleReferenceElemBy(self, params, elem, fallback=None):
+        entry = self.getSingleReferenceEntryBy(params)
+        return entry.get(elem, fallback)
         
     
     ## PROTOCOLS
@@ -201,6 +216,9 @@ class SecondaryDataHandlerAPI(SecondaryDataHandler):
         entries = self.getProtocolEntriesBy(params)
         return self.getSingleItem(entries)
     
+    def getSingleProtocolElemBy(self, params, elem, fallback=None):
+        entry = self.getSingleProtocolEntryBy(params)
+        return entry.get(elem, fallback)
     
     
     ## JOBS
@@ -243,7 +261,41 @@ class SecondaryDataHandlerAPI(SecondaryDataHandler):
         return propDict
     
     
-class SecondaryDataHandlerDisk(SecondaryDataHandler):
+    #################################
+    ##       HANDLE JOB SUBMIT     ##
+    #################################
+
+    def submitSecondaryJob(self, condition, job):
+        # Get or create the inputs
+        inputs = []
+        for c in job.cells.all:
+            pass
+        
+        # Save the inputs
+        
+        # Create the job
+        jobData = {'name'         : 'Milhouse%s_%s' % (condition.project.name, condition.name),
+                   'createdBy'    : 'MilhouseUser', 
+                   'description'  : 'Milhouse%s_%s %s' % (condition.project.name, condition.name, job.protocol.name),
+                   'protocolName' : job.protocol.protocolId,
+                   'groupNames'   : ['all'],
+                   'inputIds'     : inputs
+                   }
+        
+        # Save the job
+        
+        # Submit the job
+        
+
+
+
+class SecondaryJobServiceDisk(SecondaryJobService):
+    
+    
+    ###########################
+    ##      HANDLE DATA      ##
+    ###########################
+    
     
     def getJobIDs(self):
         return glob.glob('%s/*/*' % self.server.jobDataPath)
@@ -314,6 +366,3 @@ class SecondaryDataHandlerDisk(SecondaryDataHandler):
     
         return dataDict
     
-    
-    
-        

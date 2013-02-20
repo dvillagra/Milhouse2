@@ -34,7 +34,7 @@ class UserProfile(BaseModel):
 class SMRTCell(BaseModel):
     context        = models.CharField(max_length=100, null=True, blank=True)
     path           = models.FilePathField()
-    primaryFolder = models.CharField(max_length=50)
+    primaryFolder  = models.CharField(max_length=50)
     limsCode       = models.CharField(max_length=50, null=True, blank=True)
 
 #class SecondaryProtocol(BaseModel):

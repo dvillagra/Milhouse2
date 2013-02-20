@@ -5,7 +5,7 @@ Created on Feb 6, 2013
 '''
 
 from pbmilhouse import PBUtils as PBU
-from pycore.SecondaryJobHandler import SecondaryDataHandlerFactory, SecondaryServerConnector
+from pycore.SecondaryJobHandler import SecondaryJobServiceFactory, SecondaryServerConnector
 from pycore.TestUtils import printOut as PO
 
 def pingSecondaryServer(server):
@@ -67,7 +67,7 @@ if __name__ == '__main__':
     print "Beginning Tests..."
     
     server = PBU.MP17_SMRT_SERVER
-    handler = SecondaryDataHandlerFactory.create(server, disk=False)
+    handler = SecondaryJobServiceFactory.create(server, disk=False)
     pingSecondaryServer(server)
     
     getReferenceSequences(server, handler)

@@ -12,7 +12,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 import pycore.MUtils as MU
 from django_code.models import SecondaryAnalysisServer
-from pycore.SecondaryJobHandler import SecondaryDataHandlerFactory, SecondaryDataHandlerError
+from pycore.SecondaryJobHandler import SecondaryJobServiceFactory, SecondaryJobServiceError
 from pycore.tools.LIMSHandler import LIMSMapper
 
 
@@ -134,7 +134,7 @@ class ExperimentDefinitionValidator(object):
             secondaryServers = [SecondaryAnalysisServer.objects.get(serverName=x) for x in csv['SecondaryServerName']]
             secondaryServers = dict((x.serverName, x) for x in secondaryServers)
             serverNames = n.unique(secondaryServers.keys())
-            dataHandlerDict = dict([(s, SecondaryDataHandlerFactory.create(secondaryServers.get(s), disk=False)) for s in serverNames])
+            dataHandlerDict = dict([(s, SecondaryJobServiceFactory.create(secondaryServers.get(s), disk=False)) for s in serverNames])
         except ObjectDoesNotExist:
             msg = 'Invalid SecondaryServerName. Valid values are: %s' % (', '.join([x.serverName for x in SecondaryAnalysisServer.objects.all()]))
             return (False, msg)
@@ -215,7 +215,7 @@ class ExperimentDefinitionValidator(object):
                 sdh = dataHandlerDict.get(s)
                 try:
                     sdh.getSingleJobEntry(j)
-                except SecondaryDataHandlerError: # yes, this is bad... i know
+                except SecondaryJobServiceError: # yes, this is bad... i know
                     msg = 'Single Job ID [%s] does not exist on server [%s]' % (j,s)
                     return (False, msg)
         

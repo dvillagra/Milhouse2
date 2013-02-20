@@ -4,25 +4,38 @@ Created on Feb 7, 2013
 @author: dvillagra
 '''
 
-from pycore.SecondaryJobHandler import SecondaryDataHandler
+from pycore.SecondaryJobHandler import SecondaryJobService
 
-class MartinDataHandlerFactory(object):
+class MartinJobServiceFactory(object):
     
     @staticmethod
     def create(server, disk):
         if disk:
-            return MartinDataHandlerDisk(server)
+            return MartinJobServiceDisk(server)
         else:
-            return MartinDataHandlerAPI(server)
+            return MartinJobServiceAPI(server)
 
-class MartinDataHandlerAPI(SecondaryDataHandler):
+class MartinJobServiceAPI(SecondaryJobService):
     pass
 #    def getReferences(self, apiCall='', apiParams=None):
 #        return SDH.getReferences(apiCall, apiParams)
 
 
-class MartinDataHandlerDisk(SecondaryDataHandler):
-    pass
+class MartinJobServiceDisk(SecondaryJobService):
+    
+    
+    ## REFERENCES
+    def getReferenceNames(self):
+        pass
+    
+    ## PROTOCOLS
+    def getProtocolNames(self):
+        pass
+    
+    ## JOBS
+    def getJobIDs(self):
+        pass
+    
 
 #def parseMartinXML(tocXML, martinType):
 #    dataDict = {}
