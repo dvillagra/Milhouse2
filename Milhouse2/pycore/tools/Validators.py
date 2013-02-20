@@ -91,15 +91,15 @@ class ExperimentDefinitionValidator(object):
         # Check to see that valid headers were supplied
         csvHeaders = filter(lambda x: not x.startswith('p_'), self.csv.dtype.names)
         jobType = None        
-        for m in self.getHeaderValues(True).values():
+        for m in self.getValidHeaderValues(True).values():
             if all([x in csvHeaders for x in m]):
-                jobType = self.getHeaderValues(minimal=True, reverse=True).get(m)
+                jobType = self.getValidHeaderValues(minimal=True, reverse=True).get(m)
         return jobType
     
     def validateDefinition(self):
         csv = self.csv
-        allHeaders = self.getHeaderValues()
-        minHeaders = self.getHeaderValues(True)
+        allHeaders = self.getValidHeaderValues()
+        minHeaders = self.getValidHeaderValues(True)
         csvHeaders = filter(lambda x: not x.startswith('p_'), csv.dtype.names)
         
         if csv is None:
@@ -244,7 +244,7 @@ class ExperimentDefinitionValidator(object):
                     e = [x.strip() for x in re.split(r'[&\|]+', e)]
                 else:
                     e = [e]
-                validExtract = ExperimentDefinitionValidator.getExtractByValues()
+                validExtract = ExperimentDefinitionValidator.getValidExtractByValues()
                 if not all([any([v in x for v in validExtract]) for x in e]):
                     msg = 'Invalid ExtractBy [%s]. Please select valid ExtractBy option: %s' % (e, ', '.join(validExtract))
                     return (False, msg)

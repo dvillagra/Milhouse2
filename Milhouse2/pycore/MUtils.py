@@ -31,8 +31,8 @@ def limsCodeFromCellPath(cellPath):
         nums = cellPath.split('/')[-2:]
         [int(x) for x in nums]
         return '-'.join(nums)
-    except Exception:
-        return None
+    except ValueError:
+        logMsg('MUtils', 'Unable to find LIMS Code from cell path %s' % cellPath, 'info')
 
 def cellInfoFromFofnLine(fofnLine, limsCode = False, withContext = False):
     cellPath = os.path.dirname(os.path.dirname(fofnLine))

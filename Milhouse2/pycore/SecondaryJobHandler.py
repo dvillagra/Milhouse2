@@ -185,7 +185,7 @@ class SecondaryDataHandlerAPI(SecondaryDataHandler):
         return self.makeAPICall('protocols')
         
     def getProtocolEntries(self):
-        return self._getElemDict(self.getProtocols())
+        return self._getEntries(self.getProtocols())
         
     def getProtocolElem(self, elem, fallback='unknown'):
         return self._getElemFrom(self.getProtocolEntries(), elem, fallback)
@@ -213,7 +213,7 @@ class SecondaryDataHandlerAPI(SecondaryDataHandler):
         return self.makeAPICall('jobs')
     
     def getJobEntries(self):
-        return self._getElemDict(self.getJobs())
+        return self._getEntries(self.getJobs())
     
     def getSingleJobEntry(self, jobID):
         return self.getSingleItem(self.makeAPICall('jobs/%s' % jobID))
@@ -229,16 +229,16 @@ class SecondaryDataHandlerAPI(SecondaryDataHandler):
         return self.getJobElems('jobId')
         
     def getSMRTCellInfo(self, jobID):
-        return self._getElemDict(self.makeAPICall('jobs/%s/inputs' % jobID))
+        return self._getEntries(self.makeAPICall('jobs/%s/inputs' % jobID))
     
     
     
     ## MAKE DICTIONARY WITH NAMES AND VALUES
     def makePropertyDict(self, props=('ReferenceNames', 'ProtocolNames')):
         propDict = {}
-        if 'References' in props:
+        if 'ReferenceNames' in props:
             propDict['ReferenceNames'] = self.getReferenceNames()
-        if 'Protocols' in props:
+        if 'ProtocolNames' in props:
             propDict['ProtocolNames'] = self.getProtocolNames()
         return propDict
     
