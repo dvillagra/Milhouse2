@@ -34,7 +34,7 @@ class UserProfile(BaseModel):
 class SMRTCell(BaseModel):
     context        = models.CharField(max_length=100, null=True, blank=True)
     path           = models.FilePathField()
-    primaryFolder = models.CharField(max_length=50)
+    primaryFolder  = models.CharField(max_length=50)
     limsCode       = models.CharField(max_length=50, null=True, blank=True)
 
 #class SecondaryProtocol(BaseModel):
@@ -81,7 +81,7 @@ class Project(BaseModel):
     projectID        = models.IntegerField()
     name             = models.CharField(max_length=75)
     description      = models.TextField(max_length=500)
-    tags             = models.CharField(max_length=100)
+    tags             = models.CharField(max_length=100, blank=True, null=True)
     analysisGroup    = models.ManyToManyField(AnalysisProcedureGroup)
     status           = models.SmallIntegerField(choices = enums.PROJECT_STATUS, default=1)
     
@@ -103,9 +103,8 @@ class AnalysisItem(BaseModel):
 
 class Condition(BaseModel):
     name          = models.CharField(max_length=50)
-    secondary_job = models.ManyToManyField(SecondaryJob)
-    filter_expr   = models.CharField(max_length=500)
-    extractDict   = jsonfield.JSONField(null=True, blank=True)
+    secondaryJob  = models.ManyToManyField(SecondaryJob)
+    extractBy     = models.CharField(max_length=150, null=True, blank=True)
     extrasDict    = jsonfield.JSONField(null=True, blank=True)
     status        = models.SmallIntegerField(choices = enums.CONDITION_STATUS, default=1)
     project       = models.ForeignKey(Project)
@@ -116,7 +115,7 @@ class ConditionJSON(BaseModel):
 
 
 ##############################
-##    SIGNAL DISPATCHERS    ##    
+##    SIGNAL DISPATCHERS    ##
 ##############################
 
 # Signal dispatcher for user creation

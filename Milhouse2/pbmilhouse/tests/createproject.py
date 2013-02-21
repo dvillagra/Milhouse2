@@ -19,7 +19,10 @@ def validateProject(definition):
     ProjectFactory.validateProjectDefinition(definition)
 
 def makeProject(definition):
-    ProjectFactory.create(definition)
+    proj = ProjectFactory.create(definition)
+    PO('Secondary Jobs', proj.get('SecondaryJobs'))
+    PO('Conditions', proj.get('Conditions'))
+    PO('Project', proj.get('Project'))
 
 if __name__ == '__main__':
     

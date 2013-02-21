@@ -12,8 +12,15 @@ from django.core.exceptions import ObjectDoesNotExist
 
 import pycore.MUtils as MU
 from django_code.models import SecondaryAnalysisServer
-from pycore.SecondaryJobHandler import SecondaryDataHandlerFactory
+from pycore.SecondaryJobHandler import SecondaryJobServiceFactory, SecondaryJobServiceError
 from pycore.tools.LIMSHandler import LIMSMapper
+
+
+class ValidationError(Exception):
+    def __init__(self, value):
+        self.value = value
+    def __str__(self):
+        return repr(self.value)
 
 
 class SMRTCellDataPathValidator(object):
@@ -35,7 +42,23 @@ class SMRTCellDataPathValidator(object):
 class ExperimentDefinitionValidator(object):
 
     @staticmethod
-    def getHeaderValues(minimal = False, reverse=False, tolower=False):
+    def csvToRecArray(csv):
+        if isinstance(csv, n.recarray):
+            return csv
+        elif isinstance(csv, str):
+            if os.path.isfile(csv):
+                try:
+                    return MU.getRecArrayFromCSV(csv, caseSensitive=True)
+                except ValueError as err:
+                    MU.logMsg('CsvToRecArray', 'Incorrectly formatted CSV file:\n %s' % err, 'error')
+            else:
+                MU.logMsg('CsvToRecArray', 'CSV file provided does not exist! %s' % csv, 'error')
+        else:
+            raise ValidationError('Unable to convert CSV definition input [%s] into RecArray' % csv)
+
+    
+    @staticmethod
+    def getValidHeaderValues(minimal = False, reverse=False, tolower=False):
         allOpts = {'newJob'       : ('Name', 'SecondaryServerName', 'SMRTCellPath', 'PrimaryFolder', 'SecondaryProtocol', 'SecondaryReference', 'ExtractBy', 'MergeBy'),
                    'exisitingJob' : ('Name', 'SecondaryServerName', 'SecondaryJobID', 'ExtractBy', 'MergeBy')
                    }
@@ -51,27 +74,15 @@ class ExperimentDefinitionValidator(object):
         return opts
     
     @staticmethod
-    def getExtractByValues():
+    def getValidExtractByValues():
         return ['Readlength', 'TemplateSpan', 'NErrors', 'ReadFrames', 
                 'FrameRates', 'IPD', 'PulseWidth', 'Accuracy', 'PolRate', 
                 'Reference', 'Barcode', 'Movie']
         
         
     def __init__(self, csv):
-        self.csv = self._getDefinitionRecArray(csv)
+        self.csv = self.csvToRecArray(csv)
         
-    def _getDefinitionRecArray(self, csv):
-        if isinstance(csv, str):
-            if os.path.isfile(csv):
-                try:
-                    return MU.getRecArrayFromCSV(csv, caseSensitive=True)
-                except ValueError as err:
-                    MU.logMsg(self, 'Incorrectly formatted CSV file:\n %s' % err, 'error')
-            else:
-                MU.logMsg(self, 'CSV file provided does not exist! %s' % csv, 'error')
-        else:
-            return csv
-    
     def getExperimentDefinition(self):
         return self.csv
         
@@ -80,15 +91,15 @@ class ExperimentDefinitionValidator(object):
         # Check to see that valid headers were supplied
         csvHeaders = filter(lambda x: not x.startswith('p_'), self.csv.dtype.names)
         jobType = None        
-        for m in self.getHeaderValues(True).values():
+        for m in self.getValidHeaderValues(True).values():
             if all([x in csvHeaders for x in m]):
-                jobType = self.getHeaderValues(minimal=True, reverse=True).get(m)
+                jobType = self.getValidHeaderValues(minimal=True, reverse=True).get(m)
         return jobType
     
     def validateDefinition(self):
         csv = self.csv
-        allHeaders = self.getHeaderValues()
-        minHeaders = self.getHeaderValues(True)
+        allHeaders = self.getValidHeaderValues()
+        minHeaders = self.getValidHeaderValues(True)
         csvHeaders = filter(lambda x: not x.startswith('p_'), csv.dtype.names)
         
         if csv is None:
@@ -123,7 +134,7 @@ class ExperimentDefinitionValidator(object):
             secondaryServers = [SecondaryAnalysisServer.objects.get(serverName=x) for x in csv['SecondaryServerName']]
             secondaryServers = dict((x.serverName, x) for x in secondaryServers)
             serverNames = n.unique(secondaryServers.keys())
-            dataHandlerDict = dict([(s, SecondaryDataHandlerFactory.create(secondaryServers.get(s), disk=False)) for s in serverNames])
+            dataHandlerDict = dict([(s, SecondaryJobServiceFactory.create(secondaryServers.get(s), disk=False)) for s in serverNames])
         except ObjectDoesNotExist:
             msg = 'Invalid SecondaryServerName. Valid values are: %s' % (', '.join([x.serverName for x in SecondaryAnalysisServer.objects.all()]))
             return (False, msg)
@@ -143,12 +154,12 @@ class ExperimentDefinitionValidator(object):
         # Check new job specific settings
         if jobType == 'newJob':
             
-            serverPropDict = dict([(s, dataHandlerDict[s].makePropertyDict(('References', 'Protocols'))) for s in serverNames])
+            serverPropDict = dict([(s, dataHandlerDict[s].makePropertyDict(('ReferenceNames', 'ProtocolNames'))) for s in serverNames])
             
             # Check if protocols and references provided exists in secondary server's protocol list
             for s,p,r in zip(csv['SecondaryServerName'], csv['SecondaryProtocol'], csv['SecondaryReference']):
-                serverProtocols = serverPropDict[s].get('Protocols', [])
-                serverReferences = serverPropDict[s].get('References', [])
+                serverProtocols = serverPropDict[s].get('ProtocolNames', [])
+                serverReferences = serverPropDict[s].get('ReferenceNames', [])
                 referenceWhitelist = ['LIMSTemplates', 'LIMSTemplate']
                 if len(filter(lambda x: x==p, serverProtocols)) != 1:
                     msg = 'SecondaryProtocol does not map to a single name on server: %s' % p
@@ -170,7 +181,7 @@ class ExperimentDefinitionValidator(object):
                     try:
                         limsPath = LIMSMapper(d).getDataPath()
                     except Exception as err:
-                        return (False, 'Unable to parse LIMS Code: %s, Error: %s' % (d, err))
+                        return (False, 'SMRTCellPath [%s] is not a valid path, nor a valid LIMS Code' % (d, err))
                         
                     if limsPath:
                         scv = SMRTCellDataPathValidator(limsPath, p)
@@ -204,7 +215,7 @@ class ExperimentDefinitionValidator(object):
                 sdh = dataHandlerDict.get(s)
                 try:
                     sdh.getSingleJobEntry(j)
-                except Exception: # yes, this is bad... i know
+                except SecondaryJobServiceError: # yes, this is bad... i know
                     msg = 'Single Job ID [%s] does not exist on server [%s]' % (j,s)
                     return (False, msg)
         
@@ -233,7 +244,7 @@ class ExperimentDefinitionValidator(object):
                     e = [x.strip() for x in re.split(r'[&\|]+', e)]
                 else:
                     e = [e]
-                validExtract = ExperimentDefinitionValidator.getExtractByValues()
+                validExtract = ExperimentDefinitionValidator.getValidExtractByValues()
                 if not all([any([v in x for v in validExtract]) for x in e]):
                     msg = 'Invalid ExtractBy [%s]. Please select valid ExtractBy option: %s' % (e, ', '.join(validExtract))
                     return (False, msg)

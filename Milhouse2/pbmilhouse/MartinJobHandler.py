@@ -4,25 +4,125 @@ Created on Feb 7, 2013
 @author: dvillagra
 '''
 
-from pycore.SecondaryJobHandler import SecondaryDataHandler
+from pycore.SecondaryJobHandler import SecondaryJobService
 
-class MartinDataHandlerFactory(object):
+class MartinJobServiceFactory(object):
     
     @staticmethod
     def create(server, disk):
         if disk:
-            return MartinDataHandlerDisk(server)
+            return MartinJobServiceDisk(server)
         else:
-            return MartinDataHandlerAPI(server)
+            return MartinJobServiceAPI(server)
 
-class MartinDataHandlerAPI(SecondaryDataHandler):
-    pass
-#    def getReferences(self, apiCall='', apiParams=None):
-#        return SDH.getReferences(apiCall, apiParams)
+class MartinJobServiceAPI(SecondaryJobService):
+
+    ## REFERENCES
+    def getReferences(self):
+        return self.makeAPICall('SMRTReferencesInfo')
+    
+    def getReferenceEntries(self):
+        return self._getEntries(self.getReferences(), entryName='items')
+    
+    def getReferenceElem(self, elem, fallback='unknown'):
+        return self._getElemFrom(self.getReferenceEntries(), elem, fallback)
+
+    def getReferenceNames(self):
+        return self.getReferenceElem('ref_id', 'none')
+    
+    def getReferenceEntriesBy(self, params):
+        entries = self.getReferenceEntries()
+        return self._filterEntriesBy(entries, params)
+    
+    def getSingleReferenceEntryBy(self, params):
+        entries = self.getReferenceEntriesBy(params)
+        return self.getSingleItem(entries)
+    
+    def getSingleReferenceElemBy(self, params, elem, fallback=None):
+        entry = self.getSingleReferenceEntryBy(params)
+        return entry.get(elem, fallback)
+    
+    
+    
+    ## PROTOCOLS
+    def getProtocols(self):
+        return self.makeAPICall('SMRTAnalysisList')    
+    
+    def getProtocolEntries(self):
+        return self._getEntries(self.getProtocols(), entryName='items')
+    
+    def getProtocolElem(self, elem, fallback='unknown'):
+        return self._getElemFrom(self.getProtocolEntries(), elem, fallback)
+
+    def getProtocolNames(self):
+        return self.getProtocolElem('analysis_name', 'none')
+    
+    def getProtocolEntriesBy(self, params):
+        entries = self.getProtocolEntries()
+        return self._filterEntriesBy(entries, params)
+    
+    def getSingleProtocolEntryBy(self, params):
+        entries = self.getProtocolEntriesBy(params)
+        return self.getSingleItem(entries)
+    
+    def getSingleProtocolElemBy(self, params, elem, fallback=None):
+        entry = self.getSingleProtocolEntryBy(params)
+        return entry.get(elem, fallback)
+    
+    ## JOBS
+    # Don't use this it takes forever!
+    def getJobs(self, params=None):
+        return self.makeAPICall('SMRTAnalysisJobListAll', params)
+    
+    def getJobEntries(self):
+        return self._getEntries(self.getJobs())
+    
+    def getSingleJobEntry(self, jobID):
+        return self.getSingleItem(self.makeAPICall('SMRTAnalysisJobByJobId', {'job_id': jobID}))
+    
+    def getSingleJobXML(self, jobID):
+        return self.getSingleItem(self.makeAPICall('SMRTAnalysisJobXMLByJobId', {'job_id': jobID}))
+
+    def getJobElems(self, elem, fallback='none'):
+        return self._getElemFrom(self.getJobEntries(), elem, fallback)
+    
+    def getSingleJobElem(self, elem, jobID):
+        entry = self.getSingleJobEntry(jobID)
+        return self._getSingleElemFrom(entry, elem)
+
+    def getJobIDs(self):
+        return self.getJobElems('job_id')
+        
+    def getSMRTCellInfo(self, jobID):
+        return self.getSingleItem(self.makeAPICall('SMRTAnalysisInputXMLByJobId', {'job_id': jobID}))
+    
+    def getBasicJobInfo(self, jobID):
+        jobEntry = self.getSingleJobEntry(jobID)
+        jobXML   = self.getSingleJobXML(jobID)
+        
+        jobInfo = {'jobId'         : 'asdf',
+                   'referenceName' : 'refname',
+                   'protocolName'  : 'protocolName'                   
+                   }
+        
+        return jobInfo
 
 
-class MartinDataHandlerDisk(SecondaryDataHandler):
-    pass
+class MartinJobServiceDisk(SecondaryJobService):
+    
+    
+    ## REFERENCES
+    def getReferenceNames(self):
+        pass
+    
+    ## PROTOCOLS
+    def getProtocolNames(self):
+        pass
+    
+    ## JOBS
+    def getJobIDs(self):
+        pass
+    
 
 #def parseMartinXML(tocXML, martinType):
 #    dataDict = {}

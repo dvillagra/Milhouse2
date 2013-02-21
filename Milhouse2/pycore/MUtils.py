@@ -11,39 +11,9 @@ import numpy as n
 import tempfile
 import subprocess
 
+from pycore.tools.LIMSHandler import LIMSMapper
 
-def normalizeJobID(jobID, digits=6):
-    if isinstance(jobID, str):
-        return jobID.zfill(digits)
-    else:
-        formatStr = '%%0%dd' % digits
-        return formatStr % jobID
 
-def getJobDiskPath(basePath, jobID):
-    jobID = normalizeJobID(jobID)
-    return os.path.join(basePath, jobID[:3], jobID)
-
-def getCellContext(smrtcell):
-    pass
-
-def limsCodeFromCellPath(cellPath):
-    try:
-        nums = cellPath.split('/')[-2:]
-        [int(x) for x in nums]
-        return '-'.join(nums)
-    except Exception:
-        return None
-
-def cellInfoFromFofnLine(fofnLine, limsCode = False, withContext = False):
-    cellPath = os.path.dirname(os.path.dirname(fofnLine))
-    primaryFolder = os.path.basename(os.path.dirname(fofnLine))
-    context = getCellContext(os.path.basename(fofnLine)) if withContext else ''
-    limsCode =  limsCodeFromCellPath(cellPath) if limsCode else ''
-    
-    return {'SMRTCellPath'  : cellPath, 
-            'PrimaryFolder' : primaryFolder, 
-            'Context'       : context, 
-            'LIMSCode'      : limsCode}
 
 
 def parseMilhouseConf(confFN):
@@ -73,37 +43,5 @@ def logMsg(obj, msg, mode='info'):
               'debug': lambda x: logging.debug(x) }
     if logMsg.has_key(mode): logMsg[mode](msg)
     else: logging.error('Failed to log message at level %s: %s' % (mode, msg))
-    
-
-
-def getRecArrayFromCSV(incsv, columnType=None, standardDtype=False, caseSensitive=False, sanitize=False):
-    data = n.ndarray([])
-    if isinstance(incsv, str) and os.path.isfile(incsv) or not isinstance(incsv, str):
-        if sanitize:
-            fout = tempfile.NamedTemporaryFile(suffix='_sanitized.csv', delete=True)
-            subprocess.call('sed "s;#;;g" %s > %s' % (incsv, fout.name), shell=True)
-            incsv = fout.name
-
-#        if columnType:
-#            dictCtype = dict(columnType)
-#            ctype = [(k,dictCtype[k]) for k in getHeader(incsv)]
-#            data = n.rec.fromrecords(n.genfromtxt(fname=incsv, delimiter=',', skip_header=1, dtype=ctype, autostrip=True), dtype=ctype)
-#        else:
-        data = n.recfromcsv(incsv, autostrip=True, case_sensitive=caseSensitive)
-        if standardDtype:
-            t_dtype = [(dtn,data.dtype[dtn]) for dtn in data.dtype.names]
-            t_dtype = map(lambda dt: (dt[0],n.dtype('|S100')) if dt[1].kind == 'S' else dt, t_dtype)
-            data = n.rec.array(data.tolist(), dtype=t_dtype)
-
-        if not data.shape:
-            data.shape = (1,)
-
-    return data
-
-    
-    
-    
-    
-    
     
     

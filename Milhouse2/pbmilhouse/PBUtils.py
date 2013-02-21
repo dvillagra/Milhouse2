@@ -33,7 +33,7 @@ MARTIN_PROD_SERVER_CONFIG = {'serverName'    : 'MartinProd',
                              'jobDataPath'   : '/mnt/secondary/Smrtpipe/AppRoot/static/analysisJob_v2/',
                              'referencePath' : '/mnt/secondary/Smrtpipe/martin/prod/data/repository/',
                              'protocolPath'  : '/mnt/secondary/Smrtpipe/martin/prod/data/workflows/',
-                             'apiRootPath'   : '',
+                             'apiRootPath'   : '/DBService/',
                              'active'        : True}
 
 
