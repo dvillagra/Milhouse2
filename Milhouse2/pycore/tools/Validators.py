@@ -12,7 +12,7 @@ from django.core.exceptions import ObjectDoesNotExist
 
 import pycore.MUtils as MU
 from django_code.models import SecondaryAnalysisServer
-from pycore.SecondaryJobHandler import SecondaryJobServiceFactory, SecondaryJobServiceError
+from pycore.SecondaryJobHandler import SecondaryJobServiceFactory, SecondaryJobServiceError, SecondaryJobService
 from pycore.tools.LIMSHandler import LIMSMapper
 
 
@@ -60,11 +60,11 @@ class ExperimentDefinitionValidator(object):
     @staticmethod
     def getValidHeaderValues(minimal = False, reverse=False, tolower=False):
         allOpts = {'newJob'       : ('Name', 'SecondaryServerName', 'SMRTCellPath', 'PrimaryFolder', 'SecondaryProtocol', 'SecondaryReference', 'ExtractBy', 'MergeBy'),
-                   'exisitingJob' : ('Name', 'SecondaryServerName', 'SecondaryJobID', 'ExtractBy', 'MergeBy')
+                   'existingJob'  : ('Name', 'SecondaryServerName', 'SecondaryJobID', 'ExtractBy', 'MergeBy')
                    }
         
         minOpts = {'newJob'       : ('Name', 'SecondaryServerName', 'SMRTCellPath', 'PrimaryFolder', 'SecondaryProtocol', 'SecondaryReference'),
-                   'exisitingJob' : ('Name', 'SecondaryServerName', 'SecondaryJobID')
+                   'existingJob'  : ('Name', 'SecondaryServerName', 'SecondaryJobID')
                    }
         opts = minOpts if minimal else allOpts
         if tolower:
@@ -134,7 +134,7 @@ class ExperimentDefinitionValidator(object):
             secondaryServers = [SecondaryAnalysisServer.objects.get(serverName=x) for x in csv['SecondaryServerName']]
             secondaryServers = dict((x.serverName, x) for x in secondaryServers)
             serverNames = n.unique(secondaryServers.keys())
-            dataHandlerDict = dict([(s, SecondaryJobServiceFactory.create(secondaryServers.get(s), disk=False)) for s in serverNames])
+            dataHandlerDict = dict([(s, SecondaryJobServiceFactory.create(secondaryServers.get(s))) for s in serverNames])
         except ObjectDoesNotExist:
             msg = 'Invalid SecondaryServerName. Valid values are: %s' % (', '.join([x.serverName for x in SecondaryAnalysisServer.objects.all()]))
             return (False, msg)
@@ -153,7 +153,6 @@ class ExperimentDefinitionValidator(object):
         
         # Check new job specific settings
         if jobType == 'newJob':
-            
             serverPropDict = dict([(s, dataHandlerDict[s].makePropertyDict(('ReferenceNames', 'ProtocolNames'))) for s in serverNames])
             
             # Check if protocols and references provided exists in secondary server's protocol list
@@ -179,8 +178,8 @@ class ExperimentDefinitionValidator(object):
                 else:
                     # Path provided might be a LIMSCode - check with the LIMSHandler to see if it validates
                     try:
-                        limsPath = LIMSMapper(d).getDataPath()
-                    except Exception as err:
+                        limsPath = LIMSMapper.limsCodeFromCellPath(d)
+                    except ValueError as err:
                         return (False, 'SMRTCellPath [%s] is not a valid path, nor a valid LIMS Code' % (d, err))
                         
                     if limsPath:
@@ -191,21 +190,21 @@ class ExperimentDefinitionValidator(object):
                     else:
                         msg = 'SMRTCellPath could not be mapped to a unique LIMS Code: %s' % d
                         return (False, msg)
-            
+                    
             # Check to make sure that protocol is split/merge-able.
             if 'ExtractBy' in csvHeaders:
-                for p, e in zip(csv['SecondaryProtocol'], csv['ExtractBy']):
-                    if not re.findall('([Rr]esequencing|[Mm]apping)', p):
-                        msg = 'SecondaryProtocol [%s] may not be extractable by [%s].  Does the protocol generate a cmp.h5?' % (p, e)
-                        return (True, msg)
-
-                        
+                for s, p, e in zip(csv['SecondaryServerName'], csv['SecondaryProtocol'], csv['ExtractBy']):
+                    sjs = dataHandlerDict.get(s)
+                    if e and not sjs.protocolIsSplittable(p):
+                        msg = 'SecondaryProtocol [%s] is not be extractable by [%s].  Does the protocol generate a cmp.h5?' % (p, e)
+                        return (False, msg)
+                    
         
         elif jobType == 'existingJob':
             
             # Check to make sure all job IDs are integers
             try:
-                secondaryJobsIDs = [int(x) for x in csv['SecondaryJobID']]
+                [int(x) for x in csv['SecondaryJobID']]
             except ValueError:
                 msg = 'Invalid SecondaryJobID provided.  All IDs must be integers: %s' % csv['SecondaryJobID']
                 return (False, msg)
@@ -214,13 +213,22 @@ class ExperimentDefinitionValidator(object):
             for s,j in zip(csv['SecondaryServerName'], csv['SecondaryJobID']):
                 sdh = dataHandlerDict.get(s)
                 try:
-                    sdh.getSingleJobEntry(j)
+                    sdh.singleJobExists(j)
                 except SecondaryJobServiceError: # yes, this is bad... i know
                     msg = 'Single Job ID [%s] does not exist on server [%s]' % (j,s)
                     return (False, msg)
+            
+            # Check to make sure that protocol is split/merge-able.
+            if 'ExtractBy' in csvHeaders:
+                for s, j, e in zip(csv['SecondaryServerName'], csv['SecondaryJobID'], csv['ExtractBy']):
+                    sjs = dataHandlerDict.get(s)
+                    jobInfo = sjs.getModelJobInfo(j)
+                    protocol = SecondaryJobService.getSingleItem(jobInfo.get('protocol')).get('name')
+                    if protocol and protocol != 'unknown' and e and not sjs.protocolIsSplittable(protocol):
+                        msg = 'SecondaryProtocol [%s] is not be extractable by [%s].  Does the protocol generate a cmp.h5?' % (protocol, e)
+                        return (False, msg)
         
-        # HERE'S THE ADVANCED STUFF
- 
+        # COMMON TO NEW AND EXISTING JOBS
         # Check for uniqueness of column values within conditions
         for cond in n.unique(csv['Name']):
             condRows = csv[csv['Name'] == cond]
@@ -228,7 +236,20 @@ class ExperimentDefinitionValidator(object):
             if filter(lambda x: len(n.unique(condRows[x])) != 1, [k for k in condRows.dtype.names if k not in notUnique and not k.startswith('p_')]):
                 msg = 'For condition name=%s some of the attributes are NOT unique' % cond
                 return (False, msg) 
-
+            # Check to make sure that merged existing jobs all have the same reference
+            if 'SecondaryJobID' in condRows.dtype.names:
+                references = []
+                for s, j in zip(condRows['SecondaryServerName'], condRows['SecondaryJobID']):
+                    sjs = dataHandlerDict.get(s)
+                    jobInfo = sjs.getModelJobInfo(j)
+                    reference = SecondaryJobService.getSingleItem(jobInfo.get('reference'))
+                    refName = reference.get('name')
+                    if not refName in references:
+                        references.append(refName)
+            
+                if len(references) > 1:
+                    msg = 'Cannot merge two jobs with different reference sequences! Condition: %s' % condRows['Name']
+                    return (False, msg)
             
         # Check to make sure that split/merge was specified correctly
         if 'ExtractBy' in csvHeaders:

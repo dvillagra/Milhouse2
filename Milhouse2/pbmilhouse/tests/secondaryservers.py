@@ -4,13 +4,13 @@ Created on Feb 6, 2013
 @author: dvillagra
 '''
 
+
 from pbmilhouse import PBUtils as PBU
-from pycore.SecondaryJobHandler import SecondaryJobServiceFactory, SecondaryServerConnector
+from pycore.SecondaryJobHandler import SecondaryJobServiceFactory
 from pycore.TestUtils import printOut as PO
 
 def pingSecondaryServer(server):
-    conn = SecondaryServerConnector(server)
-    req = conn.makeRequest('/smrtportal/api/')
+    req = handler.testConnection()
     PO('Server Response', req)
 
 
@@ -30,8 +30,8 @@ def getReferenceNames(server, handler):
     req = handler.getReferenceNames()
     PO('Reference Names', req)
     
-def getSingleReferenceEntryBy(server, handler, params):
-    req = handler.getSingleReferenceEntryBy(params)
+def getSingleReferenceEntry(server, handler, refName):
+    req = handler.getSingleReferenceEntry(refName)
     PO('Single Reference', req)
 
 
@@ -50,9 +50,14 @@ def getProtocolNames(server, handler):
     req = handler.getProtocolNames()
     PO('Protocol Names', req)
 
-def getSingleProtocolEntryBy(server, handler, params):
-    req = handler.getSingleProtocolEntryBy(params)
+def getSingleProtocolEntry(server, handler, protocolName):
+    req = handler.getSingleProtocolEntryBy(protocolName)
     PO('Single Protocol', req)
+    
+def testProtocolFunction(server, handler, protocolName=None):
+    req = handler.protocolIsSplittable(protocolName)
+    PO('Protocol Function', req)
+    
     
     
 #################
@@ -73,30 +78,43 @@ def getJobIDs(server, handler):
 def getSingleJobEntry(server, handler, jobID):
     req = handler.getSingleJobEntry(jobID)
     PO('Single Job Entry', req)
+    
+def getModelJobInfo(server, handler, jobID):
+    req = handler.getModelJobInfo(jobID)
+    PO('Basic Job Info', req)
 
 if __name__ == '__main__':
     
     print "Beginning Tests..."
     
-    #server = PBU.MP17_SMRT_SERVER
-    server = PBU.MARTIN_PROD_SERVER
-    handler = SecondaryJobServiceFactory.create(server, disk=False)
+    server = PBU.MARTIN_DVLOCAL_SMRT_SERVER
+    jobID = '185018'
+    protocol = 'Standard_Standard'
+
+#    server = PBU.MP17_DVLOCAL_SMRT_SERVER
+#    protocol = 'RS_Resequencing.1'
+#    jobID = '055861'
+    
+    handler = SecondaryJobServiceFactory.create(server, disk=True)
     #pingSecondaryServer(server)
+    getModelJobInfo(server, handler, jobID)
     
-    getReferenceSequences(server, handler)
-    getReferenceEntries(server, handler)
-    getReferenceNames(server, handler)
-    getSingleReferenceEntryBy(server, handler, {'ref_id': 'Cholera_2010EL_1786'})
     
-    getProtocols(server, handler)
-    getProtocolEntries(server, handler)
-    getProtocolNames(server, handler)
-    getSingleProtocolEntryBy(server, handler, {'analysis_name': 'NoRL_ForwardOnly'})
-    
-    #getJobs(server, handler)
-    #getJobEntries(server, handler)
-    #getJobIDs(server, handler)
-    #getSingleJobEntry(server, handler, '55842')
+#    getReferenceSequences(server, handler)
+#    getReferenceEntries(server, handler)
+#    getReferenceNames(server, handler)
+#    getSingleReferenceEntry(server, handler, 'Cholera_2010EL_1786')
+#    
+#    getProtocols(server, handler)
+#    getProtocolEntries(server, handler)
+#    getProtocolNames(server, handler)
+#    getSingleProtocolEntry(server, handler, 'NoRL_ForwardOnly')
+    testProtocolFunction(server, handler, protocol)
+#    
+#    getJobs(server, handler)
+#    getJobEntries(server, handler)
+#    getJobIDs(server, handler)
+#    getSingleJobEntry(server, handler, '55842')
 
     print "Tests completed..."
     

@@ -40,21 +40,34 @@ MARTIN_PROD_SERVER_CONFIG = {'serverName'    : 'MartinProd',
 MARTIN_PROD_SERVER = SecondaryAnalysisServer(**MARTIN_PROD_SERVER_CONFIG)
 
 
-MP17DVLOCAL_SMRT_SERVER_CONFIG = {'serverName'    : 'SMRTPortalMP17DVLocal',
-                                  'serverHost'    : 'mp-f017', 
-                                  'serverPort'    : 8080,
-                                  'homePath'      : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/',
-                                  'jobDataPath'   : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/jobs/',
-                                  'referencePath' : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/references/',
-                                  'protocolPath'  : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/protocols/',
-                                  'apiRootPath'   : '/smrtportal/api/', 
-                                  'active'        : True}
+MP17_DVLOCAL_SMRT_SERVER_CONFIG = {'serverName'    : 'SMRTPortalMP17DVLocal',
+                                   'serverHost'    : 'mp-f017', 
+                                   'serverPort'    : 8080,
+                                   'homePath'      : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/smrtportal/',
+                                   'jobDataPath'   : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/smrtportal/jobs/',
+                                   'referencePath' : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/smrtportal/references/',
+                                   'protocolPath'  : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/smrtportal/protocols/',
+                                   'apiRootPath'   : '/smrtportal/api/', 
+                                   'active'        : True}
 
 
 
-MP17DVLOCAL_SMRT_SERVER = SecondaryAnalysisServer(**MP17DVLOCAL_SMRT_SERVER_CONFIG)
+MP17_DVLOCAL_SMRT_SERVER = SecondaryAnalysisServer(**MP17_DVLOCAL_SMRT_SERVER_CONFIG)
 
 
+MARTIN_DVLOCAL_SMRT_SERVER_CONFIG = {'serverName'    : 'MartinDVLocal',
+                                     'serverHost'    : 'smrtpipe', 
+                                     'serverPort'    : 80,
+                                     'homePath'      : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/martin/',
+                                     'jobDataPath'   : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/martin/jobs/',
+                                     'referencePath' : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/martin/references/',
+                                     'protocolPath'  : '/Users/dvillagra/milhouse_dev/dev/sample_data/secondary/martin/protocols/',
+                                     'apiRootPath'   : '/DBService/', 
+                                     'active'        : True}
+
+
+
+MARTIN_DVLOCAL_SMRT_SERVER = SecondaryAnalysisServer(**MARTIN_DVLOCAL_SMRT_SERVER_CONFIG)
 
 
 ####################

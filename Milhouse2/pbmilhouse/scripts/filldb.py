@@ -14,8 +14,8 @@ def fillSecondaryServers():
     print 'Loading secondary servers'
     SecondaryAnalysisServer.objects.get_or_create(**PBU.MP17_SMRT_SERVER_CONFIG)
     SecondaryAnalysisServer.objects.get_or_create(**PBU.MARTIN_PROD_SERVER_CONFIG)
-    SecondaryAnalysisServer.objects.get_or_create(**PBU.MP17DVLOCAL_SMRT_SERVER_CONFIG)
-    
+    SecondaryAnalysisServer.objects.get_or_create(**PBU.MP17_DVLOCAL_SMRT_SERVER_CONFIG)
+    SecondaryAnalysisServer.objects.get_or_create(**PBU.MARTIN_DVLOCAL_SMRT_SERVER_CONFIG)
 
 if __name__ == '__main__':
     

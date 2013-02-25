@@ -14,7 +14,7 @@ from pycore.tools.Validators import ExperimentDefinitionValidator
 from pycore import MUtils as MU
 from pycore import MEnums as enums
 from pycore.tools.LIMSHandler import LIMSMapper
-from pycore.SecondaryJobHandler import SecondaryJobServiceFactory
+from pycore.SecondaryJobHandler import SecondaryJobServiceFactory, SecondaryJobService
 
 
 class ProjectError(Exception):
@@ -87,8 +87,6 @@ class ProjectFactory(object):
                 # If this is a new secondary job, populate the necessary database tables
                 if csvType == 'newJob':
                     
-                    print 'Creating secondary jobs for condition: %s' % cond
-                    
                     uniqueJobs = n.unique(zip(condRows['SecondaryServerName'], 
                                               condRows['SecondaryProtocol'], 
                                               condRows['SecondaryReference'])) 
@@ -99,17 +97,11 @@ class ProjectFactory(object):
                         
                         # First make the job, but don't save it
                         secondaryServer    = SecondaryAnalysisServer.objects.get(serverName=job[0])
-                        sjs = SecondaryJobServiceFactory.create(secondaryServer, disk=False)
+                        sjs = SecondaryJobServiceFactory.create(secondaryServer)
                         
-                        secondaryProtocol  = sjs.getSingleProtocolEntryBy({'name' : job[1]})
-                        secondaryReference = sjs.getSingleReferenceEntryBy({'name' : job[2]})
-                        protocolEntry = {'name': secondaryProtocol.get('name', 'unknown'), 
-                                         'lastModified': secondaryProtocol.get('whenModified'),
-                                         'protocolId' : secondaryProtocol.get('id')}
+                        protocolEntry  = sjs.getModelProtocolInfo(job[1])
+                        referenceEntry = sjs.getModelReferenceInfo(job[2])
                         
-                        referenceEntry = {'name': secondaryReference.get('name', 'unknown'), 
-                                         'lastModified': secondaryReference.get('last_modified')}
-                                                    
                         jobDef = {'protocol'  : simplejson.dumps(protocolEntry),
                                   'reference' : simplejson.dumps(referenceEntry),
                                   'server'    : secondaryServer}
@@ -127,11 +119,12 @@ class ProjectFactory(object):
                             MU.logMsg(classString, msg, 'info')
                             if os.path.exists(path):
                                 # This is a data path
-                                cell = SMRTCell.objects.get_or_create(path=path, primaryFolder=primaryFolder)
+                                limsCode = LIMSMapper.limsCodeFromCellPath(path)
+                                cell = SMRTCell.objects.get_or_create(path=path, primaryFolder=primaryFolder, limsCode=limsCode)
                                 smrtCells.append(cell[0])
                             else:
                                 # this is a LIMS Code
-                                dataPath = LIMSMapper(path).getDataPath()
+                                dataPath = LIMSMapper.cellPathFromLimsCode(path)
                                 cell = SMRTCell.objects.get_or_create(path=dataPath, primaryFolder=primaryFolder, limsCode=path)
                                 smrtCells.append(cell[0])
                         
@@ -168,31 +161,21 @@ class ProjectFactory(object):
                         newJob, created = SecondaryJob.objects.get_or_create(jobID = job, server = server)
                         
                         # Add other job info in here if job was newly created...
-                        if created:
-                            sjs = SecondaryJobServiceFactory.create(server, disk=False)
+                        if True:#created:
+                            sjs = SecondaryJobServiceFactory.create(server)
                             jobID = newJob.jobID
-                            jobEntry = sjs.getSingleJobEntry(jobID)
+                            jobInfo  = sjs.getModelJobInfo(jobID)
                             
-                            # Add protocol info                 
-                            protocol = jobEntry.get('protocolName')                             
-                            secondaryProtocol  = sjs.getSingleProtocolEntryBy({'id' : protocol})
-                            protocolEntry = {'name': secondaryProtocol.get('name', 'unknown'), 
-                                             'lastModified': secondaryProtocol.get('whenModified'),
-                                             'protocolId' : secondaryProtocol.get('id')}
-                            
-                            newJob.protocol  = simplejson.dumps(protocolEntry)
-                            
-                            # Add reference info
-                            refSeq = jobEntry.get('referenceSequenceName')
-                            secondaryReference = sjs.getSingleReferenceEntryBy({'name' : refSeq})
-                            referenceEntry = {'name': secondaryReference.get('name', 'unknown'), 
-                                             'lastModified': secondaryReference.get('last_modified')}
-                            newJob.reference = simplejson.dumps(referenceEntry)
+                            # Add protocol and reference info     
+                            protocol  = SecondaryJobService.getSingleItem(jobInfo.get('protocol', {'name' : 'unknown'}))
+                            reference = SecondaryJobService.getSingleItem(jobInfo.get('reference', {'name' : 'unknown'}))
+                            newJob.protocol  = simplejson.dumps(protocol)
+                            newJob.reference = simplejson.dumps(reference)
                                 
                             newJob.save()
                             
                             # Get the SMRT Cells
-                            smrtCells = sjs.getSMRTCellInfo(jobID)
+                            smrtCells = jobInfo.get('inputs', [])
                             smrtCellObjs = []
                             for c in smrtCells: 
                                 cell = SMRTCell.objects.get_or_create(path          = c['SMRTCellPath'],

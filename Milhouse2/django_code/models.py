@@ -33,7 +33,7 @@ class UserProfile(BaseModel):
 
 class SMRTCell(BaseModel):
     context        = models.CharField(max_length=100, null=True, blank=True)
-    path           = models.FilePathField()
+    path           = models.FilePathField(blank=False)
     primaryFolder  = models.CharField(max_length=50)
     limsCode       = models.CharField(max_length=50, null=True, blank=True)
 
@@ -60,6 +60,9 @@ class SecondaryJob(BaseModel):
     protocol   = jsonfield.JSONField()
     server     = models.ForeignKey(SecondaryAnalysisServer)
     status     = models.SmallIntegerField(choices = enums.SECONDARY_STATUS, default=1)
+    
+    class Meta:
+        pass#unique_together = ('jobID', 'server')
     
 class AnalysisProcedure(BaseModel):
     name         = models.CharField(max_length=50)

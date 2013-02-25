@@ -9,43 +9,59 @@ import httplib
 import socket
 import glob
 import os
+import re
 
 from urlparse import urljoin
-from xml.dom.minidom import parse
-from xml.parsers.expat import ExpatError
 
 #import time
 import django.utils.simplejson as json
 import pycore.MUtils as MU
 from pycore.tools.LIMSHandler import LIMSMapper
+from django_code.models import SecondaryAnalysisServer
 
 # Consider implementing a factory pattern here, where a disk-implementation would also work 
 # if no server host or server port were supplied
 
 class SecondaryServerConnectorError(Exception):
+    ''' Handle errors from SecondaryServerConnector'''
     def __init__(self, value):
         self.value = value
     def __str__(self):
         return repr(self.value)
     
 class SecondaryJobServiceError(Exception):
+    ''' Handle errors from SecondaryJobService'''
     def __init__(self, value):
         self.value = value
     def __str__(self):
         return repr(self.value)
 
 class SecondaryServerConnector(object):
-    
+    '''Handle remote connections, use for interacting with Secondary Web Services API'''
     def __init__(self, server):
         self.server = server
         
     def _getConnection(self):
         return httplib.HTTPConnection(self.server.serverHost, int(self.server.serverPort), timeout=30)
     
-    def _makeResponse(self, respDict, asDict=True):
-        return respDict if asDict else json.dumps(respDict)
+    def _makeResponse(self, resp, asDict=True):
+        if asDict and isinstance(resp, dict):
+            return resp
+        elif isinstance(resp, list):
+            return resp
+        if asDict:
+            try:
+                return json.dumps(resp)
+            except ValueError as err:
+                msg = 'Unable to return response as dictionary: %s' % err
+                MU.logMsg(self, msg, 'warning')
+                return resp
+        return resp
+                
     
     def makeRequest(self, url, method='GET', params=None, responseAsDict=True):
+        ''' Make requests to remote servers, used for API calls'''
+        
         # Set basic request variables
         params = urllib.urlencode(params) if params else urllib.urlencode({})
         postHeaders = {'Content-type': 'application/x-www-form-urlencoded', 'Accept': 'text/plain'}
@@ -59,67 +75,167 @@ class SecondaryServerConnector(object):
                 conn.request(method, url, params)
             #time.sleep(2)
         except socket.error as msg:
-            MU.logMsg(self, msg, 'error')
+            MU.logMsg(self, msg, 'warning')
             conn.close()
-            return self._makeResponse({'success': 'False', 'errorMsg': msg}, responseAsDict)
+            return self._makeResponse({'success': False, 'errorMsg': msg}, responseAsDict)
         
         resp = conn.getresponse()
         if resp.status != httplib.OK:
             msg = 'Server Error Code: %d, Server error reason: %s' % (resp.status, resp.reason)
             conn.close()
-            MU.logMsg(self, msg, 'error')
-            return self._makeResponse({'success': 'False', 'errorMsg': msg}, responseAsDict)
+            MU.logMsg(self, msg, 'warning')
+            return self._makeResponse({'success': False, 'errorMsg': msg}, responseAsDict)
         
         else:  
             MU.logMsg(self, 'Successfully completed server request', 'info')      
-            respDict = json.loads(resp.read())
+            respString = resp.read()
+            try:
+                useResp = json.loads(respString)
+            except ValueError, err:
+                MU.logMsg(self, 'Unable to load response string to dictionary: %s' % err, 'warning')
+                useResp = respString
             conn.close()
-            MU.logMsg(self, 'Request returned: %s' % respDict, 'debug')
-            return self._makeResponse(respDict, responseAsDict)
+            MU.logMsg(self, 'Request returned: %s' % useResp, 'debug')
+            return self._makeResponse(useResp, responseAsDict)
         
 
+####################################
+###      JOB SERVICE FACTORY     ###
+####################################
 
 class SecondaryJobServiceFactory(object):
     
     @staticmethod
-    def create(server, disk):
-        if 'martin' in server.serverName.lower():
+    def create(server, disk=None):
+        # Create the server db model if it doesn't exist
+        if isinstance(server, str):
+            if os.path.isfile(str):
+                server = MU.serverConfToDict(server)
+            else:
+                msg = 'Unable to create server with definition: %s' % (server)
+                MU.logMsg('SecondaryJobServiceFactory', msg, 'error')
+                raise SecondaryJobServiceError(msg)
+        
+        if isinstance(server, dict):
+            try:
+                server, created = SecondaryAnalysisServer.objects.get_or_create(**server)
+                if created:
+                    MU.logMsg('SecondaryJobServiceFactory', 'Created new SecondaryAnalysisServer %s' % server, 'info')
+            except Exception as err:
+                msg = 'Unable to create server with definition: %s.  ErrorMsg: %s' % (server, err)
+                MU.logMsg('SecondaryJobServiceFactory', msg, 'error')
+                raise SecondaryJobServiceError(msg)
+                
+        if re.findall('^martin', server.serverName.lower()):
             # This is specific to PacBio only, do not set this to true for non-PacBio installs!!
             from pbmilhouse.MartinJobHandler import MartinJobServiceFactory
             return MartinJobServiceFactory.create(server, disk)
+
+        if disk is None:
+            if server.serverHost and server.serverPort:
+                sjsApi = SecondaryJobServiceAPI(server)
+                ping, msg = sjsApi.testConnection()
+                if ping:
+                    logmsg = 'Using Server API Instance, Web Service Ping: %s' % msg
+                    MU.logMsg('SecondaryJobServiceFactry', logmsg, 'info')
+                    disk = False
+                else:
+                    logmsg = 'Using Server Disk Instance, Web Service Ping: %s' % msg,
+                    MU.logMsg('SecondaryJobServiceFactory', 'info')
+                    disk = True
+            else:
+                disk = True
+        
         # All other Milhouse instance should go through this path
         if disk:
             return SecondaryJobServiceDisk(server)
         else:
             return SecondaryJobServiceAPI(server)
         
-#    @staticmethod
-#    def tryAllMethods(server, func):
-#        try:
-#            SecondaryDataHandlerFactory.create(server, True)
 
 
+####################################
+###        JOB SERVICE           ###
+####################################
 
 class SecondaryJobService(object):
+    '''Superclass for interaction with SMRT Analysis servers and files'''
+    
+    @staticmethod
+    def normalizeJobID(jobID, digits=6):
+        if isinstance(jobID, str):
+            return jobID.zfill(digits)
+        else:
+            formatStr = '%%0%dd' % digits
+            return formatStr % jobID
+    
+    @staticmethod
+    def getJobDiskPath(basePath, jobID):
+        jobID = SecondaryJobService.normalizeJobID(jobID)
+        return os.path.join(basePath, jobID[:3], jobID)
+    
+    @staticmethod
+    def getCellContext(smrtcell):
+        return ''
+    
+    @staticmethod
+    def getSMRTCellInfoFromFullPath(fullPath):
+        cellPath = os.path.dirname(os.path.dirname(fullPath))
+        primaryFolder = os.path.basename(os.path.dirname(fullPath))
+        context = SecondaryJobService.getCellContext(os.path.basename(fullPath))
+        limsCode =  LIMSMapper.limsCodeFromCellPath(cellPath)
+        
+        return {'SMRTCellPath'  : cellPath, 
+                'PrimaryFolder' : primaryFolder, 
+                'Context'       : context, 
+                'LIMSCode'      : limsCode}
+        
+    @staticmethod
+    def getSingleItem(items):
+        isList = isinstance(items, list) or isinstance(items, tuple)
+        if isList and len(items) > 1:
+            raise SecondaryJobServiceError('Multiple items returned!: %s' % str(items))
+        elif not items:
+            raise SecondaryJobServiceError('No items returned!')
+        elif isList and len(items) == 1:
+            return items[0]
+        else:
+            return items
+
     
     def __init__(self, server):
         self.server  = server
         
-    ## COMMON AND PRIVATE METHODS
+    def getInstanceComplement(self, isAPI):
+        if isAPI:
+            return SecondaryJobServiceFactory.create(self.server, disk=True)
+        else:
+            return SecondaryJobServiceFactory.create(self.server, disk=False)    
+
+
+####################################
+###      JOB SERVICE API         ###
+####################################
+
+class SecondaryJobServiceAPI(SecondaryJobService):
+    
+    def __init__(self, server):
+        super(SecondaryJobServiceAPI, self).__init__(server)
+        self.isAPI  = True
+        self.isDisk = False
+        self.isMartin = False
+
     def makeAPICall(self, apiCall, apiParams=None):
         conn = SecondaryServerConnector(self.server)
         return conn.makeRequest(urljoin(self.server.apiRootPath, apiCall), params=apiParams)
-    
-    def getSingleItem(self, items):
-        if isinstance(items, list) and len(items) > 1:
-            raise SecondaryJobServiceError('Multiple entries returned!: %s' % str(items))
-        elif not items:
-            raise SecondaryJobServiceError('No entries found matching search parameters!')
-        elif isinstance(items, list) and len(items) == 1:
-            return items[0]
+                
+    def testConnection(self):
+        ping = self.makeAPICall('')
+        if ping.get('success'):
+            return (True, '%s web service is alive!' % self.server.serverName)
         else:
-            return items
-            
+            return (False, '%s web service is not responding' % self.server.serverName)
+    
     def _getEntries(self, elems, entryName='rows'):
         return elems.get(entryName, [])
         
@@ -134,187 +250,131 @@ class SecondaryJobService(object):
         return filter(lambda e: dict(filter(lambda (x,y): e[x]==y, params.iteritems())), entries)
 
     
-    def normalizeJobID(self, jobID, digits=6):
-        if isinstance(jobID, str):
-            return jobID.zfill(digits)
-        else:
-            formatStr = '%%0%dd' % digits
-            return formatStr % jobID
-    
-    def getJobDiskPath(self, basePath, jobID):
-        jobID = self.normalizeJobID(jobID)
-        return os.path.join(basePath, jobID[:3], jobID)
-    
-    def getJobPathFromID(self, jobID):
-        jobID = self.normalizeJobID(jobID)
-        jobPath = self.getJobDiskPath(self.server.jobDataPath, jobID)
-        if os.path.isdir(jobPath):
-            return jobPath
-        else:
-            msg = 'Unable to access job path for job ID [%s].  Attempted [%s]' % (jobID, jobPath)
-            MU.logMsg(self, msg, 'error')
-    
-    def getJobFile(self, jobID, filename):
-        jobPath = self.getJobPathFromID(jobID)
-        if jobPath:
-            jobfile = os.path.join(jobPath, filename)
-            if os.path.isfile(jobfile):
-                return jobfile
-            else:
-                msg = 'Unable to access job file [%s] for job [%s].  Attempted %s' % (filename, jobID, jobfile)
-                MU.logMsg(self, msg, 'error')
-    
-    def getCellContext(self, smrtcell):
-        return ''
-    
-    def getSMRTCellInfoFromFullPath(self, fullPath):
-        cellPath = os.path.dirname(os.path.dirname(fullPath))
-        primaryFolder = os.path.basename(os.path.dirname(fullPath))
-        context = self.getCellContext(os.path.basename(fullPath))
-        limsCode =  LIMSMapper.limsCodeFromCellPath(cellPath)
-        
-        return {'SMRTCellPath'  : cellPath, 
-                'PrimaryFolder' : primaryFolder, 
-                'Context'       : context, 
-                'LIMSCode'      : limsCode}
-    
-    def getSMRTCellInfoFromFofn(self, fofn):
-        fofnLines = open(fofn, 'r').readlines()
-        return [self.cellInfoFromFullPath(x) for x in fofnLines]
-        
-    def getReferencePath(self, referenceName):
-        refPath = os.path.join(self.server.referencePath, referenceName)
-        if os.path.isdir(refPath):
-            return refPath
-        else:
-            msg = 'Unable to access path for reference [%s]. Attempted %s' % (referenceName, refPath)
-            MU.logMsg(self, msg, 'error')
-            
-    def getReferenceFile(self, referenceName):
-        refPath = self.getReferencePath(referenceName)
-        refFile = os.path.join(refPath, 'reference.info.xml')
-        if os.path.isfile(refFile):
-            return refFile
-        else:
-            msg = 'Unable to access file for reference [%s]. Attempted %s' % (referenceName, refFile)
-            MU.logMsg(self, msg, 'error')
-
-    def getProtocolFile(self, protocolFile):
-        protocolXML = os.path.join(self.server.protocolPath, protocolFile)
-        if os.path.isfile(protocolXML):
-            return protocolXML
-        else:
-            msg = 'Unable to access file for protocol [%s]. Attempted %s' % (protocolFile, protocolXML)
-            MU.logMsg(self, msg, 'error')
-    
-
-class SecondaryJobServiceAPI(SecondaryJobService):
-    
-    
     #################################
     ##      HANDLE DATA  ACCESS    ##
     #################################
                 
-    ## REFERENCES
-    def getReferences(self):
+    ## REFERENCES ##
+    # Private methods
+    def _getReferences(self):
         return self.makeAPICall('reference-sequences')
     
-    def getReferenceEntries(self):
-        entries = self._getEntries(self.getReferences())
+    def _getReferenceEntries(self):
+        entries = self._getEntries(self._getReferences())
         return self._getElemFrom(entries, 'referenceEntry')
             
-    def getReferenceElem(self, elem, fallback='unknown'):
-        return self._getElemFrom(self.getReferenceEntries(), elem, fallback)
-
-    def getReferenceNames(self):
-        return self.getReferenceElem('name', 'none')
+    def _getReferenceElem(self, elem, fallback='unknown'):
+        return self._getElemFrom(self._getReferenceEntries(), elem, fallback)
         
-    def getReferenceEntriesBy(self, params):
-        entries = self.getReferenceEntries()
+    def _getReferenceEntriesBy(self, params):
+        entries = self._getReferenceEntries()
         return self._filterEntriesBy(entries, params)
     
-    def getSingleReferenceEntry(self, refName):
-        entries = self.getReferenceEntriesBy({'name': refName})
-        return self.getSingleItem(entries)
+    def _getSingleReferenceEntry(self, refName):
+        return self.getSingleItem(self.makeAPICall('reference-sequences/%s' % refName))
     
-    def getSingleReferenceElem(self, refName, elem, fallback=None):
-        entry = self.getSingleReferenceEntryBy(refName)
+    def _getSingleReferenceElem(self, refName, elem, fallback=None):
+        entry = self._getSingleReferenceEntry(refName)
         return entry.get(elem, fallback)
     
-    def getBasicReferenceInfo(self, referenceName):
-        reference = self.getSingleReferencelEntryBy({'name': referenceName})
-        return {'name'         : reference.get('name', 'unknown'),
-                'lastModified' : reference.get('last_modified', 'unknown'),
-                'md5'          : reference['digest'].get('value', 'unknown'),
-                'version'      : reference.get('version', 'unknown')
-                }
-        
+    # Public interface methods
+    def getReferenceNames(self):
+        return self._getReferenceElem('name', 'none')
+
+    def getModelReferenceInfo(self, refName):
+        refDict = {'name' : refName}
+        reference = self._getSingleReferenceEntry(refName)
+        if reference:
+            digest = reference.get('digest')
+            if digest:
+                md5 = reference['digest'].get('value', 'unknown')
+                
+            refDict['lastModified'] = reference.get('last_modified', 'unknown')
+            refDict['md5']          = md5
+            refDict['version']      = reference.get('version', 'unknown')
+        return refDict
     
-    ## PROTOCOLS
-    def getProtocols(self):
+    def getAvailableReferenceInfo(self, refName):
+        return self.getModelReferenceInfo(refName)
+    
+    
+    ## PROTOCOLS ##
+    # Private methods
+    def _getProtocols(self):
         return self.makeAPICall('protocols')
         
-    def getProtocolEntries(self):
-        return self._getEntries(self.getProtocols())
+    def _getProtocolEntries(self):
+        return self._getEntries(self._getProtocols())
         
-    def getProtocolElem(self, elem, fallback='unknown'):
-        return self._getElemFrom(self.getProtocolEntries(), elem, fallback)
+    def _getProtocolElem(self, elem, fallback='unknown'):
+        return self._getElemFrom(self._getProtocolEntries(), elem, fallback)
     
-    def getProtocolNames(self):
-        return self.getProtocolElem('name', 'none')
-    
-    def getProtocolEntriesBy(self, params):
-        entries = self.getProtocolEntries()
+    def _getProtocolEntriesBy(self, params):
+        entries = self._getProtocolEntries()
         return self._filterEntriesBy(entries, params)
     
-    def getSingleProtocolEntry(self, protocolID):
-        entries = self.getProtocolEntriesBy({'id': protocolID})
+    def _getSingleProtocolEntry(self, protocolName):
+        entries = self._getProtocolEntriesBy({'id': protocolName})
         return self.getSingleItem(entries)
     
-    def getSingleProtocolElem(self, protocolID, elem, fallback=None):
-        entry = self.getSingleProtocolEntry(protocolID)
+    def _getSingleProtocolElem(self, protocolName, elem, fallback=None):
+        entry = self._getSingleProtocolEntry(protocolName)
         return entry.get(elem, fallback)
     
-    def getBasicProtocolInfo(self, protocolID):
-        protocol = self.getSingleProtocolEntryBy({'id': protocolID})
-        return {'name'         : protocol.get('name', 'unknown'),
-                'lastModified' : protocol.get('whenModified', 'unknown'),
-                'protocolId'   : protocolID,
-                'version'      : protocol.get('version', 'unknown')
-                }
+    def _getSingleProtocolXML(self, protocolName):
+        return self.makeAPICall('protocols/%s' % protocolName)
+    
+    # Public interface methods
+    def getProtocolNames(self):
+        return self.makeAPICall('protocols/names')
+    
+    def getModelProtocolInfo(self, protocolName):
+        protocolDict = {'name' : protocolName}
+        protocol = self._getSingleProtocolEntry(protocolName)
+        if protocol:
+            protocolDict['lastModified'] = protocol.get('whenModified', 'unknown')
+            protocolDict['version']      = protocol.get('version', 'unknown')
+        return protocolDict
         
+    def getAvailableProtocolInfo(self, protocolName):
+        #protocolXML = self.getSingleProtocolXML(protocolName)
+        complement = self.getInstanceComplement(self.isAPI)
+        return complement.getAvailableProtocolInfo(protocolName)
     
-    
+    def protocolIsSplittable(self, protocolName):
+        protocolInfo = self.getAvailableProtocolInfo(protocolName)
+        if protocolInfo:
+            moduleInfo = protocolInfo.get('modules')
+            if moduleInfo:
+                if moduleInfo.has_key('mapping'):
+                    return True
+        return False
+        
+        
+        
     ## JOBS
+    # Private methods    
+    def _getJobs(self):
+        return self.makeAPICall('jobs') # Warning: this returns a paged result, i.e. incomplete list
     
-    # XXX I'm not sure how I feel about all of these different methods, it's starting to get messy
-    # especially when you think about the separate Martin implementation and how that will return 
-    # data in a different format
+    def _getJobEntries(self):
+        return self._getEntries(self._getJobs())
     
-    def getJobs(self):
-        return self.makeAPICall('jobs')
-    
-    def getJobEntries(self):
-        return self._getEntries(self.getJobs())
-    
-    def getSingleJobEntry(self, jobID):
+    def _getSingleJobEntry(self, jobID):
         return self.getSingleItem(self.makeAPICall('jobs/%s' % jobID))
     
-    def getJobElems(self, elem, fallback='none'):
-        return self._getElemFrom(self.getJobEntries(), elem, fallback)
+    def _getJobElems(self, elem, fallback='none'):
+        return self._getElemFrom(self._getJobEntries(), elem, fallback)
     
-    def getSingleJobElem(self, elem, jobID):
-        entry = self.getSingleJobEntry(jobID)
+    def _getSingleJobElem(self, elem, jobID):
+        entry = self._getSingleJobEntry(jobID)
         return self._getSingleElemFrom(entry, elem)
 
-    def getJobIDs(self):
-        return self.getJobElems('jobId')
-        
-    def getJobInputs(self, jobID):
+    def _getJobInputs(self, jobID):
         return self._getEntries(self.makeAPICall('jobs/%s/inputs' % jobID))
-    
-    def getSMRTCellInfo(self, jobID):
-        inputs = self.getJobInputs(jobID)
+
+    def _getSMRTCellInfo(self, jobID):
+        inputs = self._getJobInputs(jobID)
         inputData = []
         for i in inputs:
             inputDict = {'SMRTCellPath'  : i.get('collectionPathUri'),
@@ -325,16 +385,27 @@ class SecondaryJobServiceAPI(SecondaryJobService):
             inputData.append(inputDict)
         
         return inputData
-    
+
+    # Public interface methods
+    def getJobIDs(self):
+        return self._getJobElems('jobId')
+        
+    def singleJobExists(self, jobID):
+        return self._getSingleJobEntry(jobID)
+
     # This is the main method that should be called from the ProjectHandler,
     # must be identical for different JobService instances (e.g. SMRT Portal, Martin, Disk, API, etc).
-    def getBasicJobInfo(self, jobID):
-        jobEntry = self.getSingleJobEntry(jobID)
+    def getModelJobInfo(self, jobID):
+        jobEntry = self._getSingleJobEntry(jobID)
         return {'jobId'     : jobEntry.get('jobId'),
-                'protocol'  : self.getBasicProtocolInfo(jobEntry.get('protocolName')),
-                'reference' : self.getBasicReferenceInfo(jobEntry.get('referenceSequenceName')),
-                'inputs'    : self.getSMRTCellInfo(jobID)
+                'protocol'  : self.getModelProtocolInfo(jobEntry.get('protocolName')),
+                'reference' : self.getModelReferenceInfo(jobEntry.get('referenceSequenceName')),
+                'inputs'    : self._getSMRTCellInfo(jobID)
                 }
+        
+    def getAvailableJobInfo(self, jobID):
+        complement = self.getInstanceComplement(self.isAPI)
+        return complement.getAvailableJobInfo(jobID)
         
     
     ## MAKE DICTIONARY WITH NAMES AND VALUES
@@ -351,97 +422,221 @@ class SecondaryJobServiceAPI(SecondaryJobService):
     ##       HANDLE JOB SUBMIT     ##
     #################################
 
-    def submitSecondaryJob(self, condition, job):
-        # Get or create the inputs
-        inputs = []
-        for c in job.cells.all:
-            pass
-        
-        # Save the inputs
-        
-        # Create the job
-        jobData = {'name'         : 'Milhouse%s_%s' % (condition.project.name, condition.name),
-                   'createdBy'    : 'MilhouseUser', 
-                   'description'  : 'Milhouse%s_%s %s' % (condition.project.name, condition.name, job.protocol.name),
-                   'protocolName' : job.protocol.protocolId,
-                   'groupNames'   : ['all'],
-                   'inputIds'     : inputs
-                   }
-        
-        # Save the job
-        
-        # Submit the job
+#    def submitSecondaryJob(self, condition, job):
+#        # Get or create the inputs
+#        inputs = []
+#        for c in job.cells.all:
+#            pass
+#        
+#        # Save the inputs
+#        
+#        # Create the job
+#        jobData = {'name'         : 'Milhouse%s_%s' % (condition.project.name, condition.name),
+#                   'createdBy'    : 'MilhouseUser', 
+#                   'description'  : 'Milhouse%s_%s %s' % (condition.project.name, condition.name, job.protocol.name),
+#                   'protocolName' : job.protocol.protocolId,
+#                   'groupNames'   : ['all'],
+#                   'inputIds'     : inputs
+#                   }
+#        
+#        # Save the job
+#        
+#        # Submit the job
         
 
 
+####################################
+###      JOB SERVICE DISK        ###
+####################################
 
 class SecondaryJobServiceDisk(SecondaryJobService):
     
+    
+    def __init__(self, server):
+        super(SecondaryJobServiceDisk, self).__init__(server)    
+        self.isAPI    = False
+        self.isDisk   = True
+        self.isMartin = False
+    
+    ## HELPER METHODS FOR DISK DATA ACCESS    
+    def getJobPathFromID(self, jobID):
+        jobID = self.normalizeJobID(jobID)
+        jobPath = self.getJobDiskPath(self.server.jobDataPath, jobID)
+        if os.path.isdir(jobPath):
+            return jobPath
+        else:
+            msg = 'Unable to access job path for job ID [%s].  Attempted [%s]' % (jobID, jobPath)
+            MU.logMsg(self, msg, 'warning')
+    
+    def getJobFile(self, jobID, filename, dataFile=False):
+        jobPath = self.getJobPathFromID(jobID)
+        if jobPath:
+            jobfile = os.path.join(jobPath, 'data', filename) if dataFile else os.path.join(jobPath, filename)
+            if os.path.isfile(jobfile):
+                return jobfile
+            else:
+                msg = 'Unable to access job file [%s] for job [%s].  Attempted %s' % (filename, jobID, jobfile)
+                MU.logMsg(self, msg, 'warning')
+
+    def getSMRTCellInfoFromFofn(self, fofn):
+        fofnLines = open(fofn, 'r').readlines()
+        return [self.getSMRTCellInfoFromFullPath(x) for x in fofnLines]
+        
+    def getReferencePath(self, referenceName):
+        refPath = os.path.join(self.server.referencePath, referenceName)
+        if os.path.isdir(refPath):
+            return refPath
+        else:
+            msg = 'Unable to access path for reference [%s]. Attempted %s' % (referenceName, refPath)
+            MU.logMsg(self, msg, 'warning')
+            
+    def getReferenceFile(self, referenceName):
+        refPath = self.getReferencePath(referenceName)
+        if refPath:
+            refFile = os.path.join(refPath, 'reference.info.xml')
+            if os.path.isfile(refFile):
+                return refFile
+            else:
+                msg = 'Unable to access file for reference [%s]. Attempted %s' % (referenceName, refFile)
+                MU.logMsg(self, msg, 'warning')
+
+    def getProtocolFile(self, protocolFile):
+        protocolXML = os.path.join(self.server.protocolPath, protocolFile)
+        if os.path.isfile(protocolXML):
+            return protocolXML
+        else:
+            msg = 'Unable to access file for protocol [%s]. Attempted %s' % (protocolFile, protocolXML)
+            MU.logMsg(self, msg, 'warning')
+     
+    def _getXMLParamValue(self, node):
+        value = node.getElementsByTagName('value')
+        if value:
+            child = value.pop().firstChild
+            if child:
+                return child.data
+        return None
     
     ###########################
     ##      HANDLE DATA      ##
     ###########################
     
-    
-    ## REFERENCES
+    ## REFERENCES ##
+    # Public interface methods
     def getReferenceNames(self):
         refDirs = glob.glob('%s/*' % self.server.referencePath)
-        return filter(lambda x: os.path.isdir(x), refDirs)
+        return [os.path.basename(r) for r in filter(lambda x: os.path.isdir(x), refDirs)]
     
-    def getBasicReferenceInfo(self, referenceName):
-        referenceFile = self.getReferenceFile(referenceName)
-        return self.parseReferenceXML(referenceFile)
-
-    def getSingleReferenceElem(self, referenceName, elem, fallback=None):
-        return self.getBasicReferenceInfo(referenceName).get(elem, fallback)
+    def getModelReferenceInfo(self, refName):
+        refInfo = {'name'         : refName,
+                   'lastModified' : 'unknown', 
+                   'md5'          : 'unknown', 
+                   'version'      : 'unknown'}
+        if refName:
+            referenceFile = self.getReferenceFile(refName)
+            if referenceFile:
+                parsedInfo = self.parseReferenceXML(referenceFile)
+                for k,v in parsedInfo.iteritems():
+                    if refInfo.has_key(k) and k != 'name':
+                        refInfo[k] = v
+        return refInfo
     
+    def getAvailableReferenceInfo(self, refName):
+        return self.getModelReferenceInfo(self, refName)
+        
     
     
     ## PROTOCOLS
-    def getProtocolIDs(self):
+    # Public interface methods
+    def getProtocolNames(self):
         protocolFiles = glob.glob('%s/*' % self.server.protocolPath)
-        filteredFiles = filter(lambda x: os.path.isfile(x) and x.endswith('.xml'), protocolFiles)   
-        return [x[:-4] for x in filteredFiles]
+        filteredFiles = filter(lambda x: os.path.isfile(x) and x.endswith('.xml'), protocolFiles)
+        return [os.path.basename(x[:-4]) for x in filteredFiles]
     
-    def getBasicProtocolInfo(self, protocolID):
-        protocolFile = self.getProtocolFile('%s.xml' % protocolID)
-        return self.parseProtocolXML(protocolFile)
+    def getModelProtocolInfo(self, protocolName):
+        protocolInfo = {'name'         : protocolName, 
+                        'lastModified' : 'unknown', 
+                        'version'      : 'unknown'}
+        if protocolName:
+            protocolFile = self.getProtocolFile('%s.xml' % protocolName)
+            if protocolFile:
+                parsedInfo = self.parseJobXML(protocolFile)
+                for k,v in parsedInfo.iteritems():
+                    if protocolInfo.has_key(k) and k != 'name':
+                        protocolInfo[k] = v
+        return protocolInfo
+    
+    def getSingleProtocolElem(self, protocolName, elem, fallback=None):
+        return self.getModelProtocolInfo(protocolName).get(elem, fallback)
+    
+    def getAvailableProtocolInfo(self, protocolName):
+        protocolXML = self.getProtocolFile('%s.xml' % protocolName)
+        return self.parseJobXML(protocolXML)
 
-    def getSingleProtocolElem(self, protocolID, elem, fallback=None):
-        return self.getBasicProtocolInfo(protocolID).get(elem, fallback)
+    def protocolIsSplittable(self, protocolName):
+        protocolInfo = self.getAvailableProtocolInfo(protocolName)
+        if protocolInfo:
+            moduleInfo = protocolInfo.get('modules')
+            if moduleInfo:
+                if moduleInfo.has_key('mapping'):
+                    return True
+        return False
+        
     
-    
-    ## JOBS
-    def getAllJobIDs(self):
+    ## JOBS    
+    def getJobIDs(self):
         return glob.glob('%s/*/*' % self.server.jobDataPath)
 
-    def getBasicJobInfo(self, jobID):
+    def singleJobExists(self, jobID):
+        return self.getSingleItem(self.getJobPathFromID(jobID))
+
+    def getModelJobInfo(self, jobID):
         inputXML = self.getJobFile(jobID, 'input.xml')
-        jobDict = {}
-        jobDict['jobId'] = jobID
+        jobDict = {'jobId': jobID}
         if inputXML:
             inputData = self.parseInputXML(inputXML)
-            jobDict['protocol']  = inputData.get('SecondaryProtocol', 'unknown'),
-            jobDict['reference'] = inputData.get('SecondaryReference', 'unknown'),
-            jobDict['inputs']    = self.getSMRTCellInfoFromFullPath(inputData.get('InputPaths'))
+            jobDict['protocol']  = self.getModelProtocolInfo(inputData.get('SecondaryProtocol')),
+            jobDict['reference'] = self.getModelReferenceInfo(inputData.get('SecondaryReference')),
+            jobDict['inputs']    = [self.getSMRTCellInfoFromFullPath(x) for x in inputData.get('InputPaths')]
         else:
-            inputFofn   = self.getJobFile(jobID, 'input.fofn')
-            settingsXML = self.getJobFile(jobID, 'settings.xml')
+            inputFofn = self.getJobFile(jobID, 'input.fofn')
+            jobXML    = self.getJobFile(jobID, 'settings.xml')
             
             if inputFofn:
                 jobDict['inputs'] = self.getSMRTCellInfoFromFofn(inputFofn)
-            if settingsXML:
-                jobDict['protocol']  = 'get from settings xml'
-                jobDict['reference'] = 'get from settings xml'
+            if jobXML:
+                parsedSettings = self.parseJobXML(jobXML)
+                protocolName = self.getSingleItem(parsedSettings.get('protocol').keys())
+                jobDict['protocol']  = self.getModelProtocolInfo(protocolName)
                 
+                refInfo = self.getSingleItem(parsedSettings.get('protocol').values())
+                refName = os.path.basename(refInfo.get('reference'))
+                jobDict['reference'] = self.getModelProtocolInfo(refName)
+        
+        #print 'RETURNING JOB INFO', jobDict
         return jobDict
+    
+    def getAvailableJobInfo(self, jobID):
+        jobFile = self.getJobFile(jobID, 'settings.xml')
+        return self.parseJobXML(jobFile)
+
             
+    ## MAKE DICTIONARY WITH NAMES AND VALUES
+    def makePropertyDict(self, props=('ReferenceNames', 'ProtocolNames')):
+        propDict = {}
+        if 'ReferenceNames' in props:
+            propDict['ReferenceNames'] = self.getReferenceNames()
+        if 'ProtocolNames' in props:
+            propDict['ProtocolNames'] = self.getProtocolNames()
+        return propDict
 
 
+    
+    ## FILE PARSING
     def parseInputXML(self, inputXML):
         dataDict = {}
-        try:
-            xmltree = parse(inputXML)
+        
+        xmltree = MU.parseXML(inputXML)
+        if xmltree:
             header = xmltree.firstChild.getElementsByTagName('header')
             dataRef = xmltree.firstChild.getElementsByTagName('dataReferences')
             
@@ -456,9 +651,9 @@ class SecondaryJobServiceDisk(SecondaryJobService):
                     job = job.pop()
                     primFolder = primFolder.pop()
                     paramsDict = {node.tagName: node.firstChild.data for node in job.childNodes if node.nodeType != 3 and node.firstChild}
-                    cells = map(lambda x: x.firstChild.data, dataRef.getElementsByTagName('data'))
-#                    cellPaths = map(lambda x: os.path.basename(x), cells)
-#                    limsCodes = map(lambda x: '-'.join(LIMSMapper.limsCodeFromCellPath(x)), cellPaths)
+                    cells = [l.firstChild.data for l in dataRef.getElementsByTagName('location')]
+    #                    cellPaths = map(lambda x: os.path.basename(x), cells)
+    #                    limsCodes = map(lambda x: '-'.join(LIMSMapper.limsCodeFromCellPath(x)), cellPaths)
                     
                     if paramsDict.get('referenceSequenceName'):
                         dataDict['SecondaryReference'] = paramsDict.get('referenceSequenceName')
@@ -469,54 +664,43 @@ class SecondaryJobServiceDisk(SecondaryJobService):
                     if cells:
                         dataDict['InputPaths'] = cells
     
-        except ExpatError:
-            msg = 'Attemtping to parse input.xml failed [%s]' % inputXML
-            MU.logMsg(self, msg, mode='info')
-            return dataDict
-    
         return dataDict
     
-    
-    def parseSettingsXML(self, settingsXML):
-        pass
-    
+        
     def parseReferenceXML(self, referenceXML):
         dataDict = {}
-        try:
-            xmltree = parse(referenceXML)
-            refInfo = xmltree.firstChild.getElementsByTagName('reference_info')
+        xmltree = MU.parseXML(referenceXML)
+        if xmltree:
+            refInfo = xmltree.getElementsByTagName('reference_info')
             
             if refInfo:
+                refInfo = refInfo.pop()
                 dataDict['name']         = refInfo.getAttribute('id')
                 dataDict['lastModified'] = refInfo.getAttribute('last_modified') 
                 #dataDict['md5']          = 'unknown',#refInfo.getAttribute('')
                 dataDict['version']      = refInfo.getAttribute('version')
                 
-        except ExpatError:
-            msg = 'Attemtping to parse reference.info.xml failed [%s]' % referenceXML
-            MU.logMsg(self, msg, mode='info')
-            return dataDict
-        
         return dataDict
     
-    def parseProtocolXML(self, protocolXML):
-        dataDict = {}
-        try:
-            xmltree = parse(protocolXML)
-            protocolInfo = xmltree.firstChild.getElementsByTagName('protocol')
-            
+    def parseJobXML(self, jobXML):
+        protocolDict = {}
+        xmltree = MU.parseXML(jobXML)
+        if xmltree:
+            protocolInfo = xmltree.getElementsByTagName('protocol')
+            moduleStageInfo   = xmltree.getElementsByTagName('moduleStage')
+    
             if protocolInfo:
-                dataDict['name']         = protocolInfo.getAttribute('id') # Fix this to actually get the name
-                #dataDict['lastModified'] = refInfo.getAttribute('last_modified') 
-                dataDict['protocolId']   = protocolInfo.getAttribute('id')
-                dataDict['version']      = protocolInfo.getAttribute('version')
+                elemAttr = 'name' if self.isMartin else 'id'
+                protocolParams = {x.getAttribute(elemAttr): x.getElementsByTagName('param') for x in protocolInfo}
+                if protocolParams:
+                    protocolDict['protocol'] = {x: {e.getAttribute('name'): self._getXMLParamValue(e) for e in y} for x,y in protocolParams.iteritems()}
                 
-        except ExpatError:
-            msg = 'Attemtping to parse protocol xml failed [%s]' % protocolXML
-            MU.logMsg(self, msg, mode='info')
-            return dataDict
-        
-        return dataDict
+            if moduleStageInfo:
+                moduleParams = {x.getAttribute('name'): x.getElementsByTagName('param') for x in moduleStageInfo}
+                if moduleParams:
+                    protocolDict['modules'] = {x: {e.getAttribute('name'): self._getXMLParamValue(e) for e in y} for x,y in moduleParams.iteritems()}
+            
+        return protocolDict
     
-    
+
     
