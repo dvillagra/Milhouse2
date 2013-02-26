@@ -168,28 +168,29 @@ class ExperimentDefinitionValidator(object):
                     return (False, msg)
             
             # Check whether primary folder names are contained within the given run codes and pls.h5/bas.h5 files exist
-            for d,p in zip(csv['SMRTCellPath'], csv['PrimaryFolder']):
+            for s,d,p in zip(csv['SecondaryServerName'], csv['SMRTCellPath'], csv['PrimaryFolder']):
                 if os.path.exists(d):
                     # A data path was given, not a LIMSCode
                     scv = SMRTCellDataPathValidator(d, p)
                     valid, msg = scv.isValid()
                     if not valid:
                         return (False, msg)
+                    # This is for internal PacBio martin server validation
+                    elif valid and re.findall('^martin', s.lower()):
+                        limsPath = LIMSMapper.limsCodeFromCellPath(d)
+                        if not limsPath:
+                            return (False, 'Martin jobs must be given cells with a valid LIMS Code: supplied [%s]' % d)
                 else:
                     # Path provided might be a LIMSCode - check with the LIMSHandler to see if it validates
-                    try:
-                        limsPath = LIMSMapper.limsCodeFromCellPath(d)
-                    except ValueError as err:
-                        return (False, 'SMRTCellPath [%s] is not a valid path, nor a valid LIMS Code' % (d, err))
+                    limsPath = LIMSMapper.limsCodeFromCellPath(d)
+                    if not limsPath:
+                        return (False, 'SMRTCellPath [%s] is not a valid path, nor a valid LIMS Code' % d)
                         
-                    if limsPath:
+                    else:
                         scv = SMRTCellDataPathValidator(limsPath, p)
                         valid, msg = scv.isValid()
                         if not valid:
                             return (False, msg)
-                    else:
-                        msg = 'SMRTCellPath could not be mapped to a unique LIMS Code: %s' % d
-                        return (False, msg)
                     
             # Check to make sure that protocol is split/merge-able.
             if 'ExtractBy' in csvHeaders:

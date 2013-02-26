@@ -13,7 +13,7 @@ import re
 
 from urlparse import urljoin
 
-#import time
+import time
 import django.utils.simplejson as json
 import pycore.MUtils as MU
 from pycore.tools.LIMSHandler import LIMSMapper
@@ -71,9 +71,10 @@ class SecondaryServerConnector(object):
             conn = self._getConnection()
             if method=='POST':
                 conn.request(method, url, params, postHeaders)
+                time.sleep(2)
             else:
                 conn.request(method, url, params)
-            #time.sleep(2)
+                #time.sleep(2)
         except socket.error as msg:
             MU.logMsg(self, msg, 'warning')
             conn.close()
@@ -192,6 +193,8 @@ class SecondaryJobService(object):
         
     @staticmethod
     def getSingleItem(items):
+        if isinstance(items, set):
+            items = list(items)
         isList = isinstance(items, list) or isinstance(items, tuple)
         if isList and len(items) > 1:
             raise SecondaryJobServiceError('Multiple items returned!: %s' % str(items))

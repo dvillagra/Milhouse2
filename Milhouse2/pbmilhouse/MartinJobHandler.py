@@ -5,8 +5,10 @@ Created on Feb 7, 2013
 '''
 
 import os
+import re
 
-from pycore.SecondaryJobHandler import SecondaryJobServiceAPI, SecondaryJobServiceDisk
+import django.utils.simplejson as json
+from pycore.SecondaryJobHandler import SecondaryJobServiceAPI, SecondaryJobServiceDisk, SecondaryServerConnector
 from pycore import MUtils as MU
 
 ####################################
@@ -29,8 +31,9 @@ class MartinJobServiceFactory(object):
                         logmsg = 'Using Server Disk Instance, Web Service Ping: %s' % msg
                         MU.logMsg('MartinJobServiceFactory', logmsg, 'info')
                         disk = True
-            disk = True
-                 
+            else:
+                disk = True
+                
         if disk:
             return MartinJobServiceDisk(server)
         else:
@@ -209,8 +212,68 @@ class MartinJobServiceAPI(SecondaryJobServiceAPI):
         if 'ProtocolNames' in props:
             propDict['ProtocolNames'] = self.getProtocolNames()
         return propDict
+    
+    
+    #### JOB SUBMISSION ####
+    def _modelToSubmissionDict(self, job, projID):
+        runby = job.runBy.name if job.runBy else 'unknown'
+        jobDict = {'job_name'      : 'MilhouseID_JobID:%s_%s' % (projID, job.id),
+                   'job_comment'   : 'User:%s' % runby,
+                   'run_codes'     : [x.limsCode for x in job.cells.all()],
+                   'primaryFolder' : self.getSingleItem(set([x.primaryFolder for x in job.cells.all()])),
+                   'analysis_name' : job.protocol.get('name'),
+                   'ref_id'        : job.reference.get('name'),
+                   'option_id'     : -1,
+                   'multiSubmit'   : 0 
+                   }
+        return jobDict
+        
+    def submitSingleJob(self, job, projID='None'):
+        MU.logMsg(self, 'Attempting to submit milhouse secondary job %s to Martin server' % job.id, 'info')
+        
+        jobData = self._modelToSubmissionDict(job, projID)
+        ref = job.reference.get('name')
+        jobData['useLIMST'] = True if 'limstemplate' in ref.lower() else False
+        params = {'job_data': json.dumps(jobData)}
+        
+        # Submit the job
+        conn = SecondaryServerConnector(self.server)
+        resp = conn.makeRequest('/JobService/submit', 'POST', params)
 
+        if not resp.get('success') == False:
+            msg = 'Martin: %s, Time: %s' % (resp.get('status'), resp.get('submit_datetime'))
+            jobID = resp['job_id']
+            MU.logMsg(self, msg, mode='info')
+            
+            MU.logMsg(self, 'Saving Martin Job ID: %s' % jobID, 'info')
+            job.jobID = jobID
+            job.save()
+            return jobID
+    
+        elif filter(lambda x: re.findall('job submitted fail', x), resp.get('status')):
+            msg = 'Martin Error: %s' % resp.get('status')
+            MU.logMsg(self, msg, mode='error')
+            
+        else:
+            MU.logMsg(self, 'Job Submission Failed', 'error')
+        
 
+    def resubmitSingleJob(self, job):
+        MU.logMsg(self, 'Attempting to re-submit Martin job %s' % job.jobID, 'info')
+        
+        jobData = {'tSelectedJob', str(job.jobID)}
+        params = {'job_data': json.dumps(jobData)}
+        
+        # Submit the job
+        conn = SecondaryServerConnector(self.server)
+        resp = conn.makeRequest('/resubmitJob', 'POST', params)
+
+        if not resp.get('success') == False:
+            MU.logMsg(self, 'Resubmitting Martin Job %s' % job.jobID, mode='info')
+            return job.jobID
+        
+        else:
+            MU.logMsg(self, 'Job Re-Submission Failed: %s' % resp.get('errorMsg'), 'error')
 
 ####################################
 ###      JOB SERVICE DISK        ###

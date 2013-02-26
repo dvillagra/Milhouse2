@@ -51,7 +51,7 @@ class SecondaryAnalysisServer(BaseModel):
     referencePath = models.CharField(max_length=100)
     protocolPath  = models.CharField(max_length=100)
     apiRootPath   = models.CharField(max_length=50, default='/smrtportal/api/')
-    active        = models.BooleanField(default=False)    
+    active        = models.BooleanField(default=False)
 
 class SecondaryJob(BaseModel):
     jobID      = models.IntegerField(null=True, blank=True, unique=True)
@@ -60,6 +60,7 @@ class SecondaryJob(BaseModel):
     protocol   = jsonfield.JSONField()
     server     = models.ForeignKey(SecondaryAnalysisServer)
     status     = models.SmallIntegerField(choices = enums.SECONDARY_STATUS, default=1)
+    runBy      = models.ForeignKey(User, null=True, blank=True)
     
     class Meta:
         pass#unique_together = ('jobID', 'server')

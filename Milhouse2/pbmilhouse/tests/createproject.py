@@ -18,12 +18,20 @@ from pycore.TestUtils import printOut as PO
 def validateProject(definition):
     ProjectFactory.validateProjectDefinition(definition)
 
-def makeProject(definition):
+def createProject(definition):
     proj = ProjectFactory.create(definition)
-    PO('Secondary Jobs', proj.get('SecondaryJobs'))
-    PO('Conditions', proj.get('Conditions'))
-    PO('Project', proj.get('Project'))
+    PO('Secondary Jobs', proj.secondaryJobs)
+    PO('Conditions', proj.conditions)
+    PO('Project', proj)
 
+def submitProject(definition, resubmit=False):
+    proj = ProjectFactory.create(definition)
+    PO('Secondary Jobs', proj.secondaryJobs)
+    PO('Conditions', proj.conditions)
+    PO('Project', proj)
+    print 'SUBMITTING JOB...'
+    proj.submitSecondaryJobs(resubmit)
+    
 if __name__ == '__main__':
     
     print "Beginning Tests..."
@@ -31,13 +39,17 @@ if __name__ == '__main__':
     milHome = os.environ.get('MILHOUSE_HOME')
     
     print "\nBeginning Project Creation Tests..."
-    fileName = 'test_multi_cond_multi_job_smrtportal.csv'
+    #fileName = 'test_multi_cond_multi_job_smrtportal.csv'
     #fileName = 'test_existing_smrtportal.csv'
     
-    #fileName = 'test_multi_cond_multi_job_martin_2.csv'
+    fileName = 'test_multi_cond_multi_job_martin_2.csv'
     #fileName = 'test_existing_martin.csv'
+    
+    filePath = os.path.join(milHome, 'projects', 'definitions', fileName)
 
-    #validateProject(os.path.join(milHome, 'projects', 'definitions', fileName))
-    makeProject(os.path.join(milHome, 'projects', 'definitions', fileName))
+    #validateProject(filePath)
+    #createProject(filePath)
+    submitProject(filePath)
     
     print "Project Creation Tests Complete!\n"
+    

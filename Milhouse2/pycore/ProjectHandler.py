@@ -6,6 +6,7 @@ Created on Feb 6, 2013
 
 import os
 import numpy as n
+from itertools import chain
 from django_code.models import SMRTCell, SecondaryAnalysisServer, SecondaryJob, Condition, Project
 from django.forms.models import model_to_dict
 from django.utils import simplejson
@@ -228,10 +229,26 @@ class ProjectFactory(object):
                             
         project = createProject(projectDict)
         jobs = createSecondaryJobs()
-        conditions = createConditions(jobs, project)
+        createConditions(jobs, project)
         
-        return {'SecondaryJobs' : jobs,
-                'Conditions'    : conditions,
-                'Project'       : project}
-
+        return MProject(project)
+    
+class MProject(object):
+    
+    def __init__(self, project):
+        self.project       = project
+        self.conditions    = project.condition_set.all()
+        self.secondaryJobs = {c.name : c.secondaryJob.all() for c in self.conditions}
+             
+    def submitSecondaryJobs(self, resubmit=False):
+        uniqueJobs = set(chain.from_iterable(self.secondaryJobs.values()))
+        for job in uniqueJobs:
+            sjs = SecondaryJobServiceFactory.create(job.server)
+            if resubmit and job.jobID:
+                sjs.resubmitSingleJob(job)
+            else:
+                sjs.submitSingleJob(job, self.project.projectID)
+        
+    
+    
                 

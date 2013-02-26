@@ -11,7 +11,6 @@ os.environ['DJANGO_SETTINGS_MODULE'] = 'django_code.settings'
 
 from django_code.models import SecondaryAnalysisServer
 
-
 MP17_SMRT_SERVER_CONFIG = {'serverName'    : 'SMRTPortalMP17',
                            'serverHost'    : 'mp-f017', 
                            'serverPort'    : 8080,
@@ -82,5 +81,6 @@ CSV_HEADER_MAPPING = {'Name'           : 'Name',
                       'MartinWorkflow' : 'SecondaryProtocol', 
                       'MartinRefSeq'   : 'SecondaryReference',
                       'MartinType'     : 'SecondaryServerName'}
-        
+
+
 
