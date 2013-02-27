@@ -97,20 +97,27 @@ class ProjectFactory(object):
                         MU.logMsg(classString, msg, 'info')
                         
                         # First make the job, but don't save it
-                        secondaryServer    = SecondaryAnalysisServer.objects.get(serverName=job[0])
+                        serverName = job[0]
+                        protocol   = job[1]
+                        reference  = job[2]
+                
+                        secondaryServer = SecondaryAnalysisServer.objects.get(serverName=serverName)
                         sjs = SecondaryJobServiceFactory.create(secondaryServer)
                         
-                        protocolEntry  = sjs.getModelProtocolInfo(job[1])
-                        referenceEntry = sjs.getModelReferenceInfo(job[2])
-                        
-                        jobDef = {'protocol'  : simplejson.dumps(protocolEntry),
-                                  'reference' : simplejson.dumps(referenceEntry),
+#                        protocolEntry  = sjs.getModelProtocolInfo(job[1])
+#                        referenceEntry = sjs.getModelReferenceInfo(job[2])
+#                        
+#                        jobDef = {'protocol'  : simplejson.dumps(protocolEntry),
+#                                  'reference' : simplejson.dumps(referenceEntry),
+#                                  'server'    : secondaryServer}
+                        jobDef = {'protocol'  : protocol,
+                                  'reference' : reference,
                                   'server'    : secondaryServer}
-                        
+
                         # Now add the cells
-                        jobRows = condRows[(condRows['SecondaryServerName'] == job[0]) & \
-                                           (condRows['SecondaryProtocol']   == job[1]) & \
-                                           (condRows['SecondaryReference']  == job[2])]
+                        jobRows = condRows[(condRows['SecondaryServerName'] == serverName) & \
+                                           (condRows['SecondaryProtocol']   == protocol) & \
+                                           (condRows['SecondaryReference']  == reference)]
                         
                         jobCells = n.unique(zip(jobRows['SMRTCellPath'], jobRows['PrimaryFolder']))
                         smrtCells = []
@@ -168,10 +175,12 @@ class ProjectFactory(object):
                             jobInfo  = sjs.getModelJobInfo(jobID)
                             
                             # Add protocol and reference info     
-                            protocol  = SecondaryJobService.getSingleItem(jobInfo.get('protocol', {'name' : 'unknown'}))
-                            reference = SecondaryJobService.getSingleItem(jobInfo.get('reference', {'name' : 'unknown'}))
-                            newJob.protocol  = simplejson.dumps(protocol)
-                            newJob.reference = simplejson.dumps(reference)
+#                            protocol  = SecondaryJobService.getSingleItem(jobInfo.get('protocol', {'name' : 'unknown'}))
+#                            reference = SecondaryJobService.getSingleItem(jobInfo.get('reference', {'name' : 'unknown'}))
+#                            newJob.protocol  = simplejson.dumps(protocol)
+#                            newJob.reference = simplejson.dumps(reference)
+                            newJob.protocol  = jobInfo.get('protocol', 'unknown')
+                            newJob.reference = jobInfo.get('reference', 'unknown')
                                 
                             newJob.save()
                             

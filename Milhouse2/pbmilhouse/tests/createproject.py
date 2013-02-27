@@ -42,14 +42,14 @@ if __name__ == '__main__':
     #fileName = 'test_multi_cond_multi_job_smrtportal.csv'
     #fileName = 'test_existing_smrtportal.csv'
     
-    fileName = 'test_multi_cond_multi_job_martin_2.csv'
-    #fileName = 'test_existing_martin.csv'
+    #fileName = 'test_multi_cond_multi_job_martin_2.csv'
+    fileName = 'test_existing_martin.csv'
     
     filePath = os.path.join(milHome, 'projects', 'definitions', fileName)
 
     #validateProject(filePath)
-    #createProject(filePath)
-    submitProject(filePath)
+    createProject(filePath)
+    #submitProject(filePath)
     
     print "Project Creation Tests Complete!\n"
     

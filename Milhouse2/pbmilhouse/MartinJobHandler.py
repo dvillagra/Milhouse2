@@ -189,12 +189,14 @@ class MartinJobServiceAPI(SecondaryJobServiceAPI):
         protocolName = jobEntry.get('analysis_name')
         jobFile      = complement.getJobFile(jobID, 'job_%s.xml' % self.normalizeJobID(jobID))
         jobXML       = complement.parseJobXML(jobFile)
+        refInfo      = self.getSingleItem(jobXML.get('protocol').values())
+        refName      = os.path.basename(refInfo.get('reference'))
         inputFofn    = complement.getJobFile(jobID, 'input.fofn')
         inputs       = complement.getSMRTCellInfoFromFofn(inputFofn)
-        
+
         jobInfo = {'jobId'     : jobID,
-                   'protocol'  : self.getModelProtocolInfo(protocolName),
-                   'reference' : self.getModelReferenceInfo(jobXML.get('referenceName')),
+                   'protocol'  : protocolName, #self.getModelProtocolInfo(protocolName),
+                   'reference' : refName, #self.getModelReferenceInfo(jobXML.get('reference')),
                    'inputs'    : inputs
                    }
         
@@ -221,8 +223,8 @@ class MartinJobServiceAPI(SecondaryJobServiceAPI):
                    'job_comment'   : 'User:%s' % runby,
                    'run_codes'     : [x.limsCode for x in job.cells.all()],
                    'primaryFolder' : self.getSingleItem(set([x.primaryFolder for x in job.cells.all()])),
-                   'analysis_name' : job.protocol.get('name'),
-                   'ref_id'        : job.reference.get('name'),
+                   'analysis_name' : job.protocol, #job.protocol.get('name'),
+                   'ref_id'        : job.reference, #job.reference.get('name'),
                    'option_id'     : -1,
                    'multiSubmit'   : 0 
                    }
@@ -232,36 +234,31 @@ class MartinJobServiceAPI(SecondaryJobServiceAPI):
         MU.logMsg(self, 'Attempting to submit milhouse secondary job %s to Martin server' % job.id, 'info')
         
         jobData = self._modelToSubmissionDict(job, projID)
-        ref = job.reference.get('name')
+        ref = job.reference #job.reference.get('name')
         jobData['useLIMST'] = True if 'limstemplate' in ref.lower() else False
-        params = {'job_data': json.dumps(jobData)}
         
         # Submit the job
+        params = {'job_data': json.dumps(jobData)}
         conn = SecondaryServerConnector(self.server)
         resp = conn.makeRequest('/JobService/submit', 'POST', params)
 
+        print 'RESPONSE IS', resp
+        
         if not resp.get('success') == False:
-            msg = 'Martin: %s, Time: %s' % (resp.get('status'), resp.get('submit_datetime'))
             jobID = resp['job_id']
-            MU.logMsg(self, msg, mode='info')
-            
             MU.logMsg(self, 'Saving Martin Job ID: %s' % jobID, 'info')
             job.jobID = jobID
             job.save()
             return jobID
     
-        elif filter(lambda x: re.findall('job submitted fail', x), resp.get('status')):
-            msg = 'Martin Error: %s' % resp.get('status')
-            MU.logMsg(self, msg, mode='error')
-            
         else:
-            MU.logMsg(self, 'Job Submission Failed', 'error')
+            MU.logMsg(self, 'Job Submission Failed. ErrorMsg: %s' % resp.get('errorMsg'), 'error')
         
 
     def resubmitSingleJob(self, job):
         MU.logMsg(self, 'Attempting to re-submit Martin job %s' % job.jobID, 'info')
         
-        jobData = {'tSelectedJob', str(job.jobID)}
+        jobData = {'tSelectedJob': str(job.jobID)}
         params = {'job_data': json.dumps(jobData)}
         
         # Submit the job

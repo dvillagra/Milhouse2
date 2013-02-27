@@ -159,6 +159,7 @@ INSTALLED_APPS = (
     'django.contrib.admindocs',
     'django_code',
     'pycore',
+    'pbmilhouse',
     # Uncomment the next line to enable the admin:
     # 'django.contrib.admin',
     # Uncomment the next line to enable admin documentation:

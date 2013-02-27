@@ -56,8 +56,10 @@ class SecondaryAnalysisServer(BaseModel):
 class SecondaryJob(BaseModel):
     jobID      = models.IntegerField(null=True, blank=True, unique=True)
     cells      = models.ManyToManyField(SMRTCell)
-    reference  = jsonfield.JSONField()
-    protocol   = jsonfield.JSONField()
+#    reference  = jsonfield.JSONField()
+#    protocol   = jsonfield.JSONField()
+    reference  = models.CharField(max_length=75)
+    protocol   = models.CharField(max_length=75)
     server     = models.ForeignKey(SecondaryAnalysisServer)
     status     = models.SmallIntegerField(choices = enums.SECONDARY_STATUS, default=1)
     runBy      = models.ForeignKey(User, null=True, blank=True)

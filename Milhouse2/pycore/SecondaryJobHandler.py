@@ -70,6 +70,7 @@ class SecondaryServerConnector(object):
         try:
             conn = self._getConnection()
             if method=='POST':
+                print 'URL: %s; PARAMS: %s' % (url, params)
                 conn.request(method, url, params, postHeaders)
                 time.sleep(2)
             else:
@@ -401,8 +402,8 @@ class SecondaryJobServiceAPI(SecondaryJobService):
     def getModelJobInfo(self, jobID):
         jobEntry = self._getSingleJobEntry(jobID)
         return {'jobId'     : jobEntry.get('jobId'),
-                'protocol'  : self.getModelProtocolInfo(jobEntry.get('protocolName')),
-                'reference' : self.getModelReferenceInfo(jobEntry.get('referenceSequenceName')),
+                'protocol'  : jobEntry.get('protocolName'), #self.getModelProtocolInfo(jobEntry.get('protocolName')),
+                'reference' : jobEntry.get('referenceSequenceName'), #self.getModelReferenceInfo(jobEntry.get('referenceSequenceName')),
                 'inputs'    : self._getSMRTCellInfo(jobID)
                 }
         
@@ -425,27 +426,84 @@ class SecondaryJobServiceAPI(SecondaryJobService):
     ##       HANDLE JOB SUBMIT     ##
     #################################
 
-#    def submitSecondaryJob(self, condition, job):
-#        # Get or create the inputs
-#        inputs = []
-#        for c in job.cells.all:
-#            pass
-#        
-#        # Save the inputs
-#        
-#        # Create the job
-#        jobData = {'name'         : 'Milhouse%s_%s' % (condition.project.name, condition.name),
-#                   'createdBy'    : 'MilhouseUser', 
-#                   'description'  : 'Milhouse%s_%s %s' % (condition.project.name, condition.name, job.protocol.name),
-#                   'protocolName' : job.protocol.protocolId,
-#                   'groupNames'   : ['all'],
-#                   'inputIds'     : inputs
-#                   }
-#        
-#        # Save the job
-#        
-#        # Submit the job
+    def _makeInputs(self, job):
+        inputPaths = [c.path for c in job.cells.all()]
+        allMetadata = all([glob.glob('%s/*.metadata.xml' % i) for i in inputPaths])
+        if allMetadata:
+            params = {'data' : inputPaths}
+            conn = SecondaryServerConnector(self.server)
+            url = urljoin(self.server.apiRootPath, 'inputs', 'import')
+            resp = conn.makeRequest(url, 'POST', params)
+            
+            print 'RESPONSE IS', resp
+            
+            if not resp.get('success') == False:
+                msg = 'Successfully created all secondary job inputs'
+                MU.logMsg(self, msg, 'info')
+                return resp
+            
+            else:
+                MU.logMsg(self, 'Failed to create secondary job inputs', 'error')
+                
+        else:
+            inputs = []
+            for cell in job.cells.all():
+                cellParams = {'collectionPathUri' : cell.path,
+                              'runName'           : 'unknown', 
+                              'groupNames'        : ['all']
+                              }
+                
+                params = {'data' : json.dumps(cellParams)}
+                conn   = SecondaryServerConnector(self.server)
+                url    = urljoin(self.server.apiRootPath, 'inputs', 'create')
+                resp   = conn.makeRequest(url, 'POST', params)
+                
+                print 'RESPONSE IS', resp
+                
+                if not resp.get('success') == False:
+                    inputs.append(resp)
+            
+            if len(inputs) == len(job.cells.all()):
+                MU.logMsg(self, 'Successfully created secondary job inputs', 'info')
+                return inputs
+            else:
+                MU.logMsg(self, 'Failed to create secondary job inputs', 'error')
+                
+                
+            
+    
+    def submitSingleJob(self, job, projID='None'):
+        # Get or create the inputs
+        inputs = self._makeInputs(job)
+        if inputs:
+
+            # Create the job
+            jobData = {'name'                  : 'Milhouse%s_%s' % (projID, job.id),
+                       'createdBy'             : 'MilhouseUser', 
+                       'description'           : 'Milhouse%s_%s %s' % (projID, job.id, job.protocol), #job.protocol.get('name')),
+                       'protocolName'          : job.protocol, #job.protocol.get('name'),
+                       'referenceSequenceName' : job.reference, #job.reference.get('name'),
+                       'groupNames'            : ['all'],
+                       'inputIds'              : inputs
+                       }
+            
+            # Submit the job
+            params = {'data' : json.dumps(jobData)}
+            conn = SecondaryServerConnector(self.server)
+            url = urljoin(self.server.apiRootPath, 'jobs', 'create')
+            resp = conn.makeRequest(url, 'POST', params)
+            
+            print 'RESPONSE IS', resp
+            
+            if not resp.get('success') == False:
+                MU.logMsg(self, 'Successfully created secondary job', 'info')
+                return resp
+            
+            else:
+                MU.logMsg(self, 'Failed to create secondary job', 'error')
         
+    def resubmitSingleJob(self, job):
+        return self.submitSingleJob(job)
 
 
 ####################################
@@ -597,8 +655,8 @@ class SecondaryJobServiceDisk(SecondaryJobService):
         jobDict = {'jobId': jobID}
         if inputXML:
             inputData = self.parseInputXML(inputXML)
-            jobDict['protocol']  = self.getModelProtocolInfo(inputData.get('SecondaryProtocol')),
-            jobDict['reference'] = self.getModelReferenceInfo(inputData.get('SecondaryReference')),
+            jobDict['protocol']  = inputData.get('SecondaryProtocol'), #self.getModelProtocolInfo(inputData.get('SecondaryProtocol')),
+            jobDict['reference'] = inputData.get('SecondaryReference'), #self.getModelReferenceInfo(inputData.get('SecondaryReference')),
             jobDict['inputs']    = [self.getSMRTCellInfoFromFullPath(x) for x in inputData.get('InputPaths')]
         else:
             inputFofn = self.getJobFile(jobID, 'input.fofn')
@@ -609,11 +667,11 @@ class SecondaryJobServiceDisk(SecondaryJobService):
             if jobXML:
                 parsedSettings = self.parseJobXML(jobXML)
                 protocolName = self.getSingleItem(parsedSettings.get('protocol').keys())
-                jobDict['protocol']  = self.getModelProtocolInfo(protocolName)
+                jobDict['protocol']  = protocolName, #self.getModelProtocolInfo(protocolName)
                 
                 refInfo = self.getSingleItem(parsedSettings.get('protocol').values())
                 refName = os.path.basename(refInfo.get('reference'))
-                jobDict['reference'] = self.getModelProtocolInfo(refName)
+                jobDict['reference'] = refName, #self.getModelProtocolInfo(refName)
         
         #print 'RETURNING JOB INFO', jobDict
         return jobDict

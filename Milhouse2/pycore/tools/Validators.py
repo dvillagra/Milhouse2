@@ -224,7 +224,8 @@ class ExperimentDefinitionValidator(object):
                 for s, j, e in zip(csv['SecondaryServerName'], csv['SecondaryJobID'], csv['ExtractBy']):
                     sjs = dataHandlerDict.get(s)
                     jobInfo = sjs.getModelJobInfo(j)
-                    protocol = SecondaryJobService.getSingleItem(jobInfo.get('protocol')).get('name')
+                    #protocol = SecondaryJobService.getSingleItem(jobInfo.get('protocol')).get('name')
+                    protocol = jobInfo.get('protocol')
                     if protocol and protocol != 'unknown' and e and not sjs.protocolIsSplittable(protocol):
                         msg = 'SecondaryProtocol [%s] is not be extractable by [%s].  Does the protocol generate a cmp.h5?' % (protocol, e)
                         return (False, msg)
@@ -243,8 +244,9 @@ class ExperimentDefinitionValidator(object):
                 for s, j in zip(condRows['SecondaryServerName'], condRows['SecondaryJobID']):
                     sjs = dataHandlerDict.get(s)
                     jobInfo = sjs.getModelJobInfo(j)
-                    reference = SecondaryJobService.getSingleItem(jobInfo.get('reference'))
-                    refName = reference.get('name')
+                    #reference = SecondaryJobService.getSingleItem(jobInfo.get('reference'))
+                    #refName = reference.get('name')
+                    refName = jobInfo.get('reference')
                     if not refName in references:
                         references.append(refName)
             
